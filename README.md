@@ -6,6 +6,10 @@ GitHub Issue에 요구사항을 적고 `ai-feature` 라벨을 붙이면, Claude 
 → CodeQL 보안 스캔 → PR 생성까지 자동으로 수행한다. PR을 `main`에 병합하면
 `deploy.yml`이 Cloudflare Workers에 배포한다.
 
+운영 주소(목표): **https://drive.j2inlab.workers.dev**
+(Worker 이름은 `drive`로 고정됨 — `j2inlab`은 Cloudflare 계정의 workers.dev 서브도메인이며,
+아래 "등록 전 준비" 1번에서 계정에 직접 설정해야 한다.)
+
 ## 사용법
 
 1. Issue 생성 → 본문에 요구사항 작성 → `ai-feature` 라벨 부착
@@ -13,19 +17,33 @@ GitHub Issue에 요구사항을 적고 `ai-feature` 라벨을 붙이면, Claude 
 2. 파이프라인이 끝나면 이슈에 PR 링크가 코멘트로 달림
 3. PR 리뷰 후 `main`에 병합 → 자동 배포
 
-## 필요한 GitHub Secrets
+## 등록 전 준비 (직접 해야 하는 일)
 
-| Secret | 용도 |
-|---|---|
-| `ANTHROPIC_API_KEY` | Claude Code CLI 인증 |
-| `CLOUDFLARE_API_TOKEN` | `wrangler deploy` 인증 (Workers 편집 권한) |
-| `CLOUDFLARE_ACCOUNT_ID` | 배포 대상 Cloudflare 계정 |
+1. **workers.dev 서브도메인을 `j2inlab`으로 설정**
+   Cloudflare 대시보드 → Workers & Pages → **Your subdomain** 옆 **Change** → `j2inlab` 입력.
+   이 값은 Cloudflare 전체 계정을 통틀어 전역 유일해야 하므로, 이미 다른 계정이 선점했다면
+   다른 이름으로 바꿔야 한다(그 경우 `wrangler.jsonc`의 `name`은 그대로 두고 실제 주소만 달라짐).
+   MCP로 연결된 Cloudflare 도구들에는 이 값을 조회/변경하는 기능이 없어 이 단계는 직접 해야 한다.
 
-```
-gh secret set ANTHROPIC_API_KEY
-gh secret set CLOUDFLARE_API_TOKEN
-gh secret set CLOUDFLARE_ACCOUNT_ID
-```
+2. **GitHub Secrets 3개 등록**
+
+   | Secret | 용도 |
+   |---|---|
+   | `ANTHROPIC_API_KEY` | Claude Code CLI 인증 (Anthropic Console에서 발급) |
+   | `CLOUDFLARE_API_TOKEN` | `wrangler deploy` 인증 — Cloudflare 대시보드 → My Profile → API Tokens → "Edit Cloudflare Workers" 템플릿으로 발급 |
+   | `CLOUDFLARE_ACCOUNT_ID` | 배포 대상 Cloudflare 계정 ID |
+
+   ```
+   gh secret set ANTHROPIC_API_KEY --repo hnjyul/drive
+   gh secret set CLOUDFLARE_API_TOKEN --repo hnjyul/drive
+   gh secret set CLOUDFLARE_ACCOUNT_ID --repo hnjyul/drive
+   ```
+
+   > GitHub Actions 워크플로가 실행 중에 자기 저장소의 Secrets를 스스로 등록하는 것은
+   > 불가능하다 — `GITHUB_TOKEN`의 permission 스키마 자체에 `secrets` 권한이 없어서
+   > `workflow_dispatch`로 우회해도 API가 403을 반환한다(플랫폼 차원의 제한, 설정으로
+   > 풀 수 있는 문제가 아님). 값만 알려주면 이 세션의 인증된 `gh` CLI로 바로 대신
+   > 등록할 수 있으니, 그때 이 대화에 값을 주면 된다.
 
 ## 로컬 개발
 

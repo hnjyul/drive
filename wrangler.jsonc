@@ -3,6 +3,7 @@
   "name": "drive",
   "main": "src/index.ts",
   "compatibility_date": "2026-09-24",
+  "workers_dev": true,
   "observability": {
     "enabled": true
   }
