@@ -1,0 +1,127 @@
+name: AI Development Pipeline
+
+on:
+  issues:
+    types: [opened, labeled]
+  workflow_dispatch:
+    inputs:
+      requirement:
+        description: "구현할 요구사항"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  pipeline:
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      contains(github.event.issue.labels.*.name, 'ai-feature')
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: write
+    outputs:
+      branch: ${{ steps.branch.outputs.name }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+      - run: npm install -g @anthropic-ai/claude-code
+
+      - id: branch
+        run: |
+          NAME="ai/feature-${{ github.event.issue.number || github.run_id }}"
+          echo "name=$NAME" >> "$GITHUB_OUTPUT"
+          git checkout -b "$NAME"
+
+      - name: Requirements → Architecture → Implementation
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          REQUIREMENT: ${{ github.event.issue.body || inputs.requirement }}
+        run: |
+          claude -p "$(cat prompts/requirements.md)"$'\n'"요구사항: $REQUIREMENT"
+          claude -p "$(cat prompts/architecture.md)"
+          claude -p "$(cat prompts/implementation.md)"
+
+      - name: Test & AutoFix loop (max 3)
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          CI: true
+        run: |
+          set +e
+          for i in 1 2 3; do
+            echo "=== attempt $i ==="
+            npm run test -- --coverage --coverageReporters=json-summary --coverageReporters=text
+            npx playwright test
+            node scripts/quality-gate.js
+            if [ $? -eq 0 ]; then
+              echo "QUALITY PASS on attempt $i"
+              exit 0
+            fi
+            if [ "$i" = "3" ]; then
+              echo "MAX RETRY REACHED"
+              exit 1
+            fi
+            claude -p "$(cat prompts/autofix.md)"
+          done
+
+      - name: Commit & push branch
+        if: always()
+        run: |
+          git config user.name "ai-dev-bot"
+          git config user.email "ai-dev-bot@users.noreply.github.com"
+          git add -A
+          git commit -m "ai: implement requirement (#${{ github.event.issue.number || github.run_id }})" || echo "변경 없음"
+          git push -u origin "${{ steps.branch.outputs.name }}"
+
+  codeql:
+    needs: pipeline
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.pipeline.outputs.branch }}
+      - uses: github/codeql-action/init@v3
+        with:
+          languages: javascript-typescript
+      - uses: github/codeql-action/analyze@v3
+
+  create-pr:
+    needs: codeql
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.pipeline.outputs.branch }}
+
+      - uses: peter-evans/create-pull-request@v7
+        id: pr
+        with:
+          title: "[AI] ${{ github.event.issue.title || 'Generated Feature' }}"
+          branch: ${{ needs.pipeline.outputs.branch }}
+          body: |
+            ${{ github.event.issue.number && format('Closes #{0}', github.event.issue.number) || '' }}
+
+            자동 생성된 PR입니다. 병합 시 `deploy.yml`이 실행되어 운영 환경에 배포됩니다.
+
+      - name: Comment back on issue
+        if: github.event.issue.number
+        run: |
+          gh issue comment ${{ github.event.issue.number }} \
+            --body "자동 구현 완료: ${{ steps.pr.outputs.pull-request-url }}"
+        env:
+          GH_TOKEN: ${{ github.token }}

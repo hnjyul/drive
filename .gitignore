@@ -1,0 +1,9 @@
+node_modules/
+coverage/
+.wrangler/
+dist/
+artifacts/*.json
+artifacts/e2e.json
+.retry
+*.log
+.env
