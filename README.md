@@ -3,12 +3,11 @@
 Cloudflare Workers 위에서 동작하는 개인 프로젝트용 Agentic 개발 파이프라인.
 GitHub Issue에 요구사항을 적고 `ai-feature` 라벨을 붙이면, Claude Code가
 요구사항 분석 → 설계 → 구현 → Jest/Playwright 검증 → (실패 시 최대 3회 AutoFix)
-→ CodeQL 보안 스캔 → PR 생성까지 자동으로 수행한다. PR을 `main`에 병합하면
-`deploy.yml`이 Cloudflare Workers에 배포한다.
+→ CodeQL 보안 스캔 → PR 생성 → AI 리뷰 후 자동 병합까지 수행한다.
+배포는 **Cloudflare Workers Builds(Git 연동)** 가 main 푸시를 감지해 자동으로
+처리한다 — GitHub에 Cloudflare API 키를 저장할 필요가 없다.
 
-운영 주소(목표): **https://drive.j2inlab.workers.dev**
-(Worker 이름은 `drive`로 고정됨 — `j2inlab`은 Cloudflare 계정의 workers.dev 서브도메인이며,
-아래 "등록 전 준비" 1번에서 계정에 직접 설정해야 한다.)
+운영 주소: **https://drive.j2inlab.workers.dev**
 
 ## 사용법
 
@@ -32,23 +31,22 @@ Secret에 넣으면, CI의 Claude Code CLI가 구독 사용량 안에서 동작�
   CI 실행이 함께 소모하므로, 파이프라인을 몰아서 돌리면 로컬 Claude Code 사용에 영향을 줄 수 있다.
 - 토큰은 유효기간이 있어 만료되면 `claude setup-token`으로 재발급 후 Secret을 갱신한다.
 
-## 등록 전 준비 (직접 해야 하는 일)
+## 배포 — Cloudflare Git 연동 (API 키 불필요)
 
-- workers.dev 서브도메인: **이미 `j2inlab`으로 설정 완료** (`drive` 배포 시 자동으로
-  `drive.j2inlab.workers.dev`가 됨)
-- `CLOUDFLARE_ACCOUNT_ID` Secret: **등록 완료**
+배포는 GitHub Actions가 아니라 Cloudflare Workers Builds가 담당한다.
+Cloudflare 대시보드에서 저장소를 1회 연결하면(Workers & Pages → 애플리케이션 생성 →
+리포지토리 가져오기 → `hnjyul/drive`), 이후 main에 푸시될 때마다 Cloudflare가
+자체 인프라에서 `npx wrangler deploy`를 실행한다. 토큰·키를 GitHub에 저장하지 않는다.
 
-남은 Secret 2개:
+- Worker 이름은 반드시 `drive`로 — 주소가 `drive.j2inlab.workers.dev`가 된다
+- GITHUB_TOKEN으로 수행된 자동 병합도 GitHub App 웹훅은 정상 수신하므로 배포가 트리거된다
+- 빌드 시간은 Cloudflare 무료 한도(월 3,000분)를 사용한다
 
-| Secret | 발급 방법 |
+## Secrets (등록 완료)
+
+| Secret | 상태 |
 |---|---|
-| `CLAUDE_CODE_OAUTH_TOKEN` | 로컬 터미널에서 `claude setup-token` 실행 → 브라우저에서 구독 계정으로 승인 → 출력된 토큰 복사 |
-| `CLOUDFLARE_API_TOKEN` | Cloudflare 대시보드 → My Profile → API Tokens → "Edit Cloudflare Workers" 템플릿으로 발급 |
-
-```
-gh secret set CLAUDE_CODE_OAUTH_TOKEN --repo hnjyul/drive
-gh secret set CLOUDFLARE_API_TOKEN --repo hnjyul/drive
-```
+| `CLAUDE_CODE_OAUTH_TOKEN` | ✅ 등록 완료 — 만료 시 `claude setup-token`으로 재발급 후 갱신 |
 
 > GitHub Actions 워크플로가 실행 중에 자기 저장소의 Secrets를 스스로 등록하는 것은
 > 불가능하다 — `GITHUB_TOKEN`의 permission 스키마 자체에 `secrets` 권한이 없어서
@@ -68,8 +66,8 @@ npm run deploy       # 수동 배포
 
 ```
 .github/workflows/
-  ai-dev.yml    이슈/수동 트리거 → 구현 → 검증 → PR
-  deploy.yml    main 병합 시 Cloudflare 배포
+  ai-dev.yml    이슈/수동 트리거 → 구현 → 검증 → PR → AI 리뷰 → 자동 병합
+                (배포는 Cloudflare Git 연동이 main 푸시를 감지해 자동 수행)
 prompts/        각 단계별 Claude Code 프롬프트
 scripts/
   quality-gate.js   coverage-summary.json / e2e 리포트 실측값으로 판정

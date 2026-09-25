@@ -138,7 +138,6 @@ jobs:
       contents: write
       pull-requests: write
       issues: write
-      actions: write
     env:
       GH_TOKEN: ${{ github.token }}
       BRANCH: ${{ needs.pipeline.outputs.branch }}
@@ -162,14 +161,11 @@ jobs:
       - name: Merge PR
         run: gh pr merge "$BRANCH" --squash --delete-branch
 
-      - name: Trigger deploy
-        run: gh workflow run deploy.yml
-
       - name: Comment merged
         if: github.event.issue.number
         run: |
           gh issue comment ${{ github.event.issue.number }} \
-            --body "✅ AI 리뷰 통과 → 자동 병합 완료. 배포가 시작되었습니다: https://drive.j2inlab.workers.dev"
+            --body "✅ AI 리뷰 통과 → 자동 병합 완료. Cloudflare가 자동 배포합니다: https://drive.j2inlab.workers.dev"
 
   notify-failure:
     if: failure()
