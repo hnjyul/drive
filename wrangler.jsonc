@@ -6,5 +6,8 @@
   "workers_dev": true,
   "observability": {
     "enabled": true
-  }
+  },
+  "kv_namespaces": [
+    { "binding": "SETTINGS", "id": "7464b616f21642218e8ff00cf1409890" }
+  ]
 }
