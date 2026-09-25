@@ -129,4 +129,59 @@ jobs:
         if: github.event.issue.number
         run: |
           PR_URL=$(gh pr list --head "$BRANCH" --json url --jq '.[0].url')
-          gh issue comment ${{ github.event.issue.number }} --body "자동 구현 완료: $PR_URL"
+          gh issue comment ${{ github.event.issue.number }} --body "자동 구현 완료: $PR_URL — AI 리뷰 통과 시 자동 병합됩니다."
+
+  review-merge-deploy:
+    needs: [pipeline, codeql, create-pr]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      actions: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      BRANCH: ${{ needs.pipeline.outputs.branch }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - run: npm install -g @anthropic-ai/claude-code
+
+      - name: AI review (병합 게이트)
+        env:
+          CLAUDE_CODE_OAUTH_TOKEN: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+        run: |
+          git fetch origin "$BRANCH"
+          { cat prompts/review.md; echo; echo '--- DIFF ---'; git diff origin/main...origin/"$BRANCH"; } \
+            | claude -p --allowedTools "Read,Glob,Grep" > review.txt
+          cat review.txt
+          grep -q "VERDICT: APPROVE" review.txt
+
+      - name: Merge PR
+        run: gh pr merge "$BRANCH" --squash --delete-branch
+
+      - name: Trigger deploy
+        run: gh workflow run deploy.yml
+
+      - name: Comment merged
+        if: github.event.issue.number
+        run: |
+          gh issue comment ${{ github.event.issue.number }} \
+            --body "✅ AI 리뷰 통과 → 자동 병합 완료. 배포가 시작되었습니다: https://drive.j2inlab.workers.dev"
+
+  notify-failure:
+    if: failure()
+    needs: [pipeline, codeql, create-pr, review-merge-deploy]
+    runs-on: ubuntu-latest
+    permissions:
+      issues: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Comment failure on issue
+        if: github.event.issue.number
+        run: |
+          gh issue comment ${{ github.event.issue.number }} --repo ${{ github.repository }} \
+            --body "⚠️ 파이프라인 실패 — 로그 확인: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"

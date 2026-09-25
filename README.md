@@ -14,8 +14,13 @@ GitHub Issue에 요구사항을 적고 `ai-feature` 라벨을 붙이면, Claude 
 
 1. Issue 생성 → 본문에 요구사항 작성 → `ai-feature` 라벨 부착
    (또는 Actions 탭 → `AI Development Pipeline` → `Run workflow`로 수동 실행)
-2. 파이프라인이 끝나면 이슈에 PR 링크가 코멘트로 달림
-3. PR 리뷰 후 `main`에 병합 → 자동 배포
+2. 이후는 전자동: 구현 → 테스트/게이트 → CodeQL → PR 생성 →
+   **AI 리뷰(APPROVE 시 자동 병합)** → 배포
+3. 실패하거나 AI 리뷰가 REJECT하면 이슈에 ⚠️ 알림 코멘트가 달리고
+   PR은 열린 채로 남아 사람이 확인한다
+
+자동 병합을 끄려면 `ai-dev.yml`의 `review-merge-deploy` job을 삭제하면 된다
+(그러면 PR 병합이 다시 수동이 된다).
 
 ## 인증 구조 — Anthropic API 과금 없음
 
