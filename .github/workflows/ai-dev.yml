@@ -2,7 +2,7 @@ name: AI Development Pipeline
 
 on:
   issues:
-    types: [opened, labeled]
+    types: [labeled]
   workflow_dispatch:
     inputs:
       requirement:
@@ -13,11 +13,15 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ai-dev-${{ github.event.issue.number || github.run_id }}
+  cancel-in-progress: false
+
 jobs:
   pipeline:
     if: >
       github.event_name == 'workflow_dispatch' ||
-      contains(github.event.issue.labels.*.name, 'ai-feature')
+      github.event.label.name == 'ai-feature'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     permissions:
