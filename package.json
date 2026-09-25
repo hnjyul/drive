@@ -11,13 +11,13 @@
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
-    "@cloudflare/workers-types": "^4.20250101.0",
+    "@cloudflare/workers-types": "^5.20260925.1",
     "@playwright/test": "^1.48.0",
     "@types/jest": "^29.5.13",
     "jest": "^29.7.0",
     "jest-environment-node": "^29.7.0",
     "ts-jest": "^29.2.5",
     "typescript": "^5.6.3",
-    "wrangler": "^3.90.0"
+    "wrangler": "^4.139.0"
   }
 }

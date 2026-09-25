@@ -7,3 +7,4 @@ artifacts/e2e.json
 .retry
 *.log
 .env
+test-results/
