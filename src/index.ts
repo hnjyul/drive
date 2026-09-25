@@ -1,3 +1,5 @@
+import pkg from "../package.json";
+
 export interface HealthStatus {
   status: "ok";
   service: "drive";
@@ -12,12 +14,24 @@ export function buildHealthStatus(now: Date = new Date()): HealthStatus {
   };
 }
 
+export interface VersionInfo {
+  version: string;
+}
+
+export function buildVersionResponse(): VersionInfo {
+  return { version: pkg.version };
+}
+
 export default {
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url);
 
     if (url.pathname === "/health") {
       return Response.json(buildHealthStatus());
+    }
+
+    if (url.pathname === "/version") {
+      return Response.json(buildVersionResponse());
     }
 
     return new Response("drive: AI 파이프라인으로 구현될 기능을 기다리는 중입니다.", {
