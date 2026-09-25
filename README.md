@@ -17,33 +17,37 @@ GitHub Issue에 요구사항을 적고 `ai-feature` 라벨을 붙이면, Claude 
 2. 파이프라인이 끝나면 이슈에 PR 링크가 코멘트로 달림
 3. PR 리뷰 후 `main`에 병합 → 자동 배포
 
+## 인증 구조 — Anthropic API 과금 없음
+
+AI 단계는 Anthropic API(종량 과금)가 아니라 **Claude 구독(Pro/Max)의 OAuth 토큰**으로
+실행한다. 로컬에서 `claude setup-token`으로 발급한 토큰을 `CLAUDE_CODE_OAUTH_TOKEN`
+Secret에 넣으면, CI의 Claude Code CLI가 구독 사용량 안에서 동작한다.
+
+- 비용: 구독료 외 추가 과금 없음. 대신 구독의 사용량 한도(5시간 윈도·주간 한도)를
+  CI 실행이 함께 소모하므로, 파이프라인을 몰아서 돌리면 로컬 Claude Code 사용에 영향을 줄 수 있다.
+- 토큰은 유효기간이 있어 만료되면 `claude setup-token`으로 재발급 후 Secret을 갱신한다.
+
 ## 등록 전 준비 (직접 해야 하는 일)
 
-1. **workers.dev 서브도메인을 `j2inlab`으로 설정**
-   Cloudflare 대시보드 → Workers & Pages → **Your subdomain** 옆 **Change** → `j2inlab` 입력.
-   이 값은 Cloudflare 전체 계정을 통틀어 전역 유일해야 하므로, 이미 다른 계정이 선점했다면
-   다른 이름으로 바꿔야 한다(그 경우 `wrangler.jsonc`의 `name`은 그대로 두고 실제 주소만 달라짐).
-   MCP로 연결된 Cloudflare 도구들에는 이 값을 조회/변경하는 기능이 없어 이 단계는 직접 해야 한다.
+- workers.dev 서브도메인: **이미 `j2inlab`으로 설정 완료** (`drive` 배포 시 자동으로
+  `drive.j2inlab.workers.dev`가 됨)
+- `CLOUDFLARE_ACCOUNT_ID` Secret: **등록 완료**
 
-2. **GitHub Secrets 3개 등록**
+남은 Secret 2개:
 
-   | Secret | 용도 |
-   |---|---|
-   | `ANTHROPIC_API_KEY` | Claude Code CLI 인증 (Anthropic Console에서 발급) |
-   | `CLOUDFLARE_API_TOKEN` | `wrangler deploy` 인증 — Cloudflare 대시보드 → My Profile → API Tokens → "Edit Cloudflare Workers" 템플릿으로 발급 |
-   | `CLOUDFLARE_ACCOUNT_ID` | 배포 대상 Cloudflare 계정 ID |
+| Secret | 발급 방법 |
+|---|---|
+| `CLAUDE_CODE_OAUTH_TOKEN` | 로컬 터미널에서 `claude setup-token` 실행 → 브라우저에서 구독 계정으로 승인 → 출력된 토큰 복사 |
+| `CLOUDFLARE_API_TOKEN` | Cloudflare 대시보드 → My Profile → API Tokens → "Edit Cloudflare Workers" 템플릿으로 발급 |
 
-   ```
-   gh secret set ANTHROPIC_API_KEY --repo hnjyul/drive
-   gh secret set CLOUDFLARE_API_TOKEN --repo hnjyul/drive
-   gh secret set CLOUDFLARE_ACCOUNT_ID --repo hnjyul/drive
-   ```
+```
+gh secret set CLAUDE_CODE_OAUTH_TOKEN --repo hnjyul/drive
+gh secret set CLOUDFLARE_API_TOKEN --repo hnjyul/drive
+```
 
-   > GitHub Actions 워크플로가 실행 중에 자기 저장소의 Secrets를 스스로 등록하는 것은
-   > 불가능하다 — `GITHUB_TOKEN`의 permission 스키마 자체에 `secrets` 권한이 없어서
-   > `workflow_dispatch`로 우회해도 API가 403을 반환한다(플랫폼 차원의 제한, 설정으로
-   > 풀 수 있는 문제가 아님). 값만 알려주면 이 세션의 인증된 `gh` CLI로 바로 대신
-   > 등록할 수 있으니, 그때 이 대화에 값을 주면 된다.
+> GitHub Actions 워크플로가 실행 중에 자기 저장소의 Secrets를 스스로 등록하는 것은
+> 불가능하다 — `GITHUB_TOKEN`의 permission 스키마 자체에 `secrets` 권한이 없어서
+> `workflow_dispatch`로 우회해도 API가 403을 반환한다(플랫폼 차원의 제한).
 
 ## 로컬 개발
 
