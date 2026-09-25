@@ -48,9 +48,9 @@ jobs:
           REQUIREMENT: ${{ github.event.issue.body || inputs.requirement }}
         run: |
           FLAGS=(--permission-mode acceptEdits --allowedTools "Edit,Write,Read,Glob,Grep,Bash(npm:*),Bash(npx:*),Bash(node:*)")
-          claude -p "${FLAGS[@]}" "$(cat prompts/requirements.md)"$'\n'"요구사항: $REQUIREMENT"
-          claude -p "${FLAGS[@]}" "$(cat prompts/architecture.md)"
-          claude -p "${FLAGS[@]}" "$(cat prompts/implementation.md)"
+          { cat prompts/requirements.md; printf '\n요구사항: %s\n' "$REQUIREMENT"; } | claude -p "${FLAGS[@]}"
+          claude -p "${FLAGS[@]}" < prompts/architecture.md
+          claude -p "${FLAGS[@]}" < prompts/implementation.md
 
       - name: Test & AutoFix loop (max 3)
         env:
@@ -71,7 +71,7 @@ jobs:
               echo "MAX RETRY REACHED"
               exit 1
             fi
-            claude -p --permission-mode acceptEdits --allowedTools "Edit,Write,Read,Glob,Grep,Bash(npm:*),Bash(npx:*),Bash(node:*)" "$(cat prompts/autofix.md)"
+            claude -p --permission-mode acceptEdits --allowedTools "Edit,Write,Read,Glob,Grep,Bash(npm:*),Bash(npx:*),Bash(node:*)" < prompts/autofix.md
           done
 
       - name: Commit & push branch
