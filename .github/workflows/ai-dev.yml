@@ -101,31 +101,32 @@ jobs:
       - uses: github/codeql-action/analyze@v3
 
   create-pr:
-    needs: codeql
+    needs: [pipeline, codeql]
     runs-on: ubuntu-latest
     permissions:
       contents: write
       pull-requests: write
       issues: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      BRANCH: ${{ needs.pipeline.outputs.branch }}
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: ${{ needs.pipeline.outputs.branch }}
 
-      - uses: peter-evans/create-pull-request@v7
-        id: pr
-        with:
-          title: "[AI] ${{ github.event.issue.title || 'Generated Feature' }}"
-          branch: ${{ needs.pipeline.outputs.branch }}
-          body: |
-            ${{ github.event.issue.number && format('Closes #{0}', github.event.issue.number) || '' }}
-
-            자동 생성된 PR입니다. 병합 시 `deploy.yml`이 실행되어 운영 환경에 배포됩니다.
+      - name: Create PR
+        run: |
+          BODY="자동 생성된 PR입니다. 병합 시 \`deploy.yml\`이 운영 환경에 배포합니다."
+          if [ -n "${{ github.event.issue.number }}" ]; then
+            BODY="Closes #${{ github.event.issue.number }}"$'\n\n'"$BODY"
+          fi
+          BODY="$BODY"$'\n\n'"🤖 Generated with [Claude Code](https://claude.com/claude-code)"
+          gh pr create --base main --head "$BRANCH" \
+            --title "[AI] ${{ github.event.issue.title || 'Generated Feature' }}" \
+            --body "$BODY" || echo "PR이 이미 존재하거나 생성 실패 — 아래에서 확인"
+          gh pr list --head "$BRANCH" --json url --jq '.[0].url'
 
       - name: Comment back on issue
         if: github.event.issue.number
         run: |
-          gh issue comment ${{ github.event.issue.number }} \
-            --body "자동 구현 완료: ${{ steps.pr.outputs.pull-request-url }}"
-        env:
-          GH_TOKEN: ${{ github.token }}
+          PR_URL=$(gh pr list --head "$BRANCH" --json url --jq '.[0].url')
+          gh issue comment ${{ github.event.issue.number }} --body "자동 구현 완료: $PR_URL"
