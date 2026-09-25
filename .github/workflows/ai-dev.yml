@@ -29,7 +29,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: 20
+          node-version: 22
           cache: npm
 
       - run: npm ci
@@ -60,6 +60,7 @@ jobs:
           set +e
           for i in 1 2 3; do
             echo "=== attempt $i ==="
+            rm -f artifacts/e2e.json
             npm run test -- --coverage --coverageReporters=json-summary --coverageReporters=text
             npx playwright test
             node scripts/quality-gate.js
@@ -79,6 +80,7 @@ jobs:
         run: |
           git config user.name "ai-dev-bot"
           git config user.email "ai-dev-bot@users.noreply.github.com"
+          git restore .github/ 2>/dev/null || true
           git add -A
           git commit -m "ai: implement requirement (#${{ github.event.issue.number || github.run_id }})" || echo "변경 없음"
           git push -u origin "${{ steps.branch.outputs.name }}"

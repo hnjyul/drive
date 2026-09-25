@@ -13,8 +13,17 @@ const THRESHOLD = { coveragePct: 90, e2ePct: 98 };
 const coverage = readJSON("coverage/coverage-summary.json", null);
 const coveragePct = coverage ? coverage.total.lines.pct : 0;
 
+function collectSpecs(suites) {
+  const out = [];
+  for (const s of suites ?? []) {
+    out.push(...(s.specs ?? []));
+    out.push(...collectSpecs(s.suites));
+  }
+  return out;
+}
+
 const e2e = readJSON("artifacts/e2e.json", null);
-const specs = e2e?.suites?.flatMap((s) => s.specs ?? []) ?? [];
+const specs = collectSpecs(e2e?.suites);
 const e2ePct = specs.length
   ? (specs.filter((s) => s.ok).length / specs.length) * 100
   : 0;
