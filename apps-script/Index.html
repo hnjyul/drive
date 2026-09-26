@@ -498,16 +498,22 @@ a.btn{text-decoration:none;color:inherit}
           <div class="card-h"><h2>사용 허용 계정</h2><span class="sub">관리자 외에 이 웹앱을 쓸 Google 계정</span>
             <div class="act"><button class="btn primary" id="btnSaveUsers">저장</button></div></div>
           <div class="card-b" style="display:flex;flex-direction:column;gap:14px">
-            <div class="row"><span class="chip mono" id="adminChip"></span><span class="hint">관리자 — 항상 접근 가능, 설정 변경 권한 보유</span></div>
+            <div class="row" style="align-items:flex-start">
+              <div style="display:flex;flex-direction:column;gap:4px">
+                <span class="chip mono" id="adminChip"></span>
+                <span class="hint" id="adminStatTxt"></span>
+              </div>
+              <span class="hint">관리자 — 계정 등록·삭제 권한</span>
+            </div>
             <div class="row">
               <input class="input" id="userEmail" type="email" placeholder="example@gmail.com" style="max-width:320px" aria-label="추가할 이메일">
               <button class="btn" id="btnAddUser">추가</button>
             </div>
             <div id="userList" style="display:flex;flex-direction:column;gap:8px"></div>
-            <div class="hint">저장 시 원본시트와 DB 파일이 해당 계정에 편집자로 자동 공유됨.
-            추가된 사용자는 조회 · 실행 이력 · "지금 DB 갱신"만 가능하고(설정 변경은 관리자 전용),
-            첫 접속 때 Google 권한 승인(확인되지 않은 앱 → 고급 → 이동)이 한 번 필요함.
-            목록에서 삭제하면 웹앱 접근이 즉시 차단됨(파일 공유 해제는 Drive에서 직접).</div>
+            <div class="hint">계정마다 독립 작업 공간 — 각자 자기 드라이브의 원본시트를 연결해 자기 DB를 만들고, 서로의 파일은 공유되지 않음.
+            관리자에게는 각 계정의 연결·최근 실행 요약만 표시됨.
+            추가된 사용자는 첫 접속 때 Google 권한 승인(확인되지 않은 앱 → 고급 → 이동)이 한 번 필요함.
+            목록에서 삭제하면 웹앱 접근이 즉시 차단되고, 그 계정의 자동 갱신도 다음 실행 시점에 스스로 해제됨.</div>
           </div>
         </div>
       </section>
@@ -546,7 +552,7 @@ const state = {
   view:'dash', dash:null, cfg:null, account:'',
   sheets:null, folders:null, tabs:[], form:null,
   cols:null, schema:null, keyCol:'', conds:[],
-  runs:null, dbv:null, pv:'table', busy:false, users:[],
+  runs:null, dbv:null, pv:'table', busy:false, users:[], userStats:{},
 };
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
@@ -599,19 +605,25 @@ function renderChrome(){
 }
 
 /* ===================================================================== 사용자 관리 */
+const statTxt = s => !s || !s.source
+  ? '작업 공간 미설정 — 본인이 접속해 원본 · DB를 연결함'
+  : ['원본 '+s.source, s.db ? 'DB '+s.db : '', s.auto ? '자동화 '+s.auto : '', s.run ? '최근 실행 '+s.run : ''].filter(Boolean).join(' · ');
 async function loadUsers(){
   showErr('#usersErr', null);
   try{
     const d = await api('api_getUsers');
-    state.users = d.users || [];
+    state.users = (d.users || []).map(u => typeof u === 'string' ? u : u.email);
+    state.userStats = {};
+    (d.users || []).forEach(u => { if(u && u.email) state.userStats[u.email] = u.stat || {}; });
     $('#adminChip').textContent = d.admin || '—';
+    $('#adminStatTxt').textContent = statTxt(d.adminStat);
     renderUsers();
   }catch(e){ showErr('#usersErr', e); }
 }
 function renderUsers(){
   const box = $('#userList');
   box.innerHTML = state.users.length
-    ? state.users.map((u,i) => `<div class="row"><span class="chip mono">${esc(u)}</span><button class="btn ghost" data-del="${i}">${ICON.x}삭제</button></div>`).join('')
+    ? state.users.map((u,i) => `<div class="row" style="align-items:flex-start"><div style="display:flex;flex-direction:column;gap:4px"><span class="chip mono">${esc(u)}</span><span class="hint">${esc(statTxt(state.userStats[u]))}</span></div><button class="btn ghost" data-del="${i}">${ICON.x}삭제</button></div>`).join('')
     : '<span class="hint">등록된 추가 사용자 없음</span>';
   box.querySelectorAll('[data-del]').forEach(b => b.onclick = () => { state.users.splice(+b.dataset.del,1); renderUsers(); });
 }
@@ -626,7 +638,6 @@ $('#btnSaveUsers').onclick = async () => {
     const d = await api('api_saveUsers', { users: state.users });
     state.users = d.users || []; renderUsers();
     toast('사용자 목록 저장됨');
-    (d.warns||[]).forEach(w => toast(w,'bad'));
   }catch(e){ toast(errMsg(e),'bad'); }
 };
 
@@ -1123,8 +1134,12 @@ const DEMO = (() => {
         structure:[ { name:'DB_제안사업', rows:rows.length, desc:'레코드 본문. 속성 설계대로 서식·드롭다운·틀 고정 적용' }, { name:'_schema', rows:on.length+4, desc:'속성명 · 유형 · 원본 컬럼 · 설명. GPT가 DB 의미를 해석하는 기준표' },
           { name:'_views', rows:3, desc:'보기 정의(필터 · 정렬 · 그룹). 팀 공통 조회 기준' }, { name:'_people', rows:4, desc:'사람 속성 드롭다운 원본 (이름 · 이메일)' },
           { name:'_archive', rows:ROWS.length-kept().length, desc:'원본에서 삭제되었거나 행 조건에서 제외된 레코드' }, { name:'_log', rows:runs.length, desc:'실행 이력 요약' }, { name:'_log_detail', rows:62, desc:'행 단위 처리 결과 (최근 5000행 유지)' } ] }; },
-    api_getUsers: () => ({ admin:'pm@example.co.kr', users:['kim@example.co.kr'] }),
-    api_saveUsers: p => ({ users:p.users, warns:[] }),
+    api_getUsers: () => ({
+      admin:'pm@example.co.kr',
+      adminStat:{ source:'제안사업 관리대장 › 2025 제안', db:'[DB] 제안사업', auto:'시간 기반 · 1시간마다', run:'09-26 09:00 · 성공' },
+      users:[{ email:'kim@example.co.kr', stat:{} }],
+    }),
+    api_saveUsers: p => ({ users:p.users }),
   };
 })();
 

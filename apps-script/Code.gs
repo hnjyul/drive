@@ -6,8 +6,10 @@
  * 최초 설치: README 절차 참조 (authorize 실행 → 웹앱 배포)
  */
 
-const CFG_KEY = 'SHEETDB_CONFIG_V1';
-const ERR_KEY = 'SHEETDB_LAST_ERROR';
+const CFG_KEY = 'SHEETDB_CONFIG_V1';      // 작업 공간 설정 — 계정별(UserProperties)
+const ERR_KEY = 'SHEETDB_LAST_ERROR';     // 마지막 오류 — 계정별(UserProperties)
+const ACCESS_KEY = 'SHEETDB_ACCESS_V1';   // 접근 허용 목록 — 전역(ScriptProperties), 관리자가 관리
+const STAT_PREFIX = 'SHEETDB_STAT:';      // 계정별 상태 요약 — 전역, 관리자 화면 표시용
 const META = ['_row_key', '_src_row', '_synced_at', '_hash'];
 const META_DESC = {
   _row_key: '고유 키 복사본 (중복·삭제 판정용)',
@@ -51,7 +53,7 @@ function doGet() {
       + '<body style="font-family:system-ui,sans-serif;margin:3rem;max-width:560px;line-height:1.6">'
       + '<h2>접근 권한이 없습니다</h2>'
       + '<p>현재 계정: <b>' + (a.email || '확인 불가') + '</b></p>'
-      + '<p>관리자(<b>' + a.cfg.adminEmail + '</b>)가 웹앱의 [사용자 관리]에서 이 이메일을 등록하면 사용할 수 있습니다.</p>'
+      + '<p>관리자(<b>' + (a.access.adminEmail || '아직 등록되지 않음') + '</b>)가 웹앱의 [사용자 관리]에서 이 이메일을 등록하면 사용할 수 있습니다.</p>'
       + '</body></html>';
     return HtmlService.createHtmlOutput(html).setTitle('접근 권한 없음');
   }
@@ -65,32 +67,47 @@ function authorize() {
   DriveApp.getRootFolder().getName();
   ScriptApp.getProjectTriggers();
   MailApp.getRemainingDailyQuota();
-  const cfg = getCfg_();
-  if (!cfg.adminEmail) { cfg.adminEmail = String(Session.getEffectiveUser().getEmail()).toLowerCase(); setCfg_(cfg); }
-  Logger.log('권한 승인 완료: ' + Session.getEffectiveUser().getEmail() + ' (관리자: ' + cfg.adminEmail + ')');
+  const acc = getAccess_();
+  if (!acc.adminEmail) { acc.adminEmail = String(Session.getEffectiveUser().getEmail()).toLowerCase(); setAccess_(acc); }
+  Logger.log('권한 승인 완료: ' + Session.getEffectiveUser().getEmail() + ' (관리자: ' + acc.adminEmail + ')');
 }
 
 /* =========================================================================
  * 접근 제어 — 관리자 + 허용 목록(설정창에서 관리)
  * ========================================================================= */
-const me_ = () => String(Session.getActiveUser().getEmail() || '').toLowerCase();
+const me_ = () => String(Session.getActiveUser().getEmail() || Session.getEffectiveUser().getEmail() || '').toLowerCase();
+
+function getAccess_() {
+  const sp = PropertiesService.getScriptProperties();
+  const raw = sp.getProperty(ACCESS_KEY);
+  if (raw) return Object.assign({ adminEmail: '', allowedUsers: [] }, JSON.parse(raw));
+  // 구버전(전역 설정 안에 접근 목록 포함)에서 1회 이관
+  const legacy = sp.getProperty(CFG_KEY);
+  const c = legacy ? JSON.parse(legacy) : {};
+  const acc = { adminEmail: String(c.adminEmail || '').toLowerCase(), allowedUsers: c.allowedUsers || [] };
+  sp.setProperty(ACCESS_KEY, JSON.stringify(acc));
+  return acc;
+}
+function setAccess_(acc) {
+  PropertiesService.getScriptProperties().setProperty(ACCESS_KEY, JSON.stringify(acc));
+}
 
 function accessInfo_() {
-  const cfg = getCfg_();
-  if (!cfg.adminEmail) { cfg.adminEmail = me_(); setCfg_(cfg); }   // 최초 접속자가 관리자로 등록됨
+  const access = getAccess_();
   const email = me_();
-  const admin = !!email && email === String(cfg.adminEmail).toLowerCase();
-  const allowed = admin || (cfg.allowedUsers || []).some(u => String(u).toLowerCase() === email);
-  return { cfg, email, admin, allowed };
+  if (!access.adminEmail && email) { access.adminEmail = email; setAccess_(access); }   // 최초 접속자가 관리자로 등록됨
+  const admin = !!email && email === String(access.adminEmail).toLowerCase();
+  const allowed = admin || (access.allowedUsers || []).some(u => String(u).toLowerCase() === email);
+  return { access, email, admin, allowed };
 }
 function requireAccess_() {
   const a = accessInfo_();
-  if (!a.allowed) throw new Error('접근 권한 없음: ' + (a.email || '(이메일 확인 불가)') + ' — 관리자(' + a.cfg.adminEmail + ')에게 사용자 등록을 요청함');
+  if (!a.allowed) throw new Error('접근 권한 없음: ' + (a.email || '(이메일 확인 불가)') + ' — 관리자(' + a.access.adminEmail + ')에게 사용자 등록을 요청함');
   return a;
 }
 function requireAdmin_() {
   const a = requireAccess_();
-  if (!a.admin) throw new Error('관리자(' + a.cfg.adminEmail + ')만 변경할 수 있음');
+  if (!a.admin) throw new Error('관리자(' + a.access.adminEmail + ')만 할 수 있는 작업임');
   return a;
 }
 
@@ -98,15 +115,35 @@ function requireAdmin_() {
  * 설정 저장소
  * ========================================================================= */
 function getCfg_() {
-  const raw = PropertiesService.getScriptProperties().getProperty(CFG_KEY);
+  const up = PropertiesService.getUserProperties();
+  let raw = up.getProperty(CFG_KEY);
+  if (!raw) {
+    // 구버전 전역 설정은 관리자의 개인 작업 공간으로 1회 이관
+    const legacy = PropertiesService.getScriptProperties().getProperty(CFG_KEY);
+    if (legacy) {
+      const email = me_();
+      if (email && email === String(getAccess_().adminEmail).toLowerCase()) { up.setProperty(CFG_KEY, legacy); raw = legacy; }
+    }
+  }
   const c = raw ? JSON.parse(raw) : {};
-  const base = { sourceId: '', sourceTab: '', headerRow: 1, dbMode: 'new', dbId: '', dbName: '[DB] 제안사업', dbFolderId: '', schema: [], keyCol: '', adminEmail: '', allowedUsers: [] };
+  const base = { sourceId: '', sourceTab: '', headerRow: 1, dbMode: 'new', dbId: '', dbName: '[DB] 제안사업', dbFolderId: '', schema: [], keyCol: '' };
   const cfg = Object.assign(base, c);
+  delete cfg.adminEmail; delete cfg.allowedUsers;   // 접근 목록은 ACCESS_KEY로 분리됨 (구버전 필드 정리)
   cfg.rules = Object.assign({}, DEFAULT_RULES, c.rules || {});
   return cfg;
 }
 function setCfg_(cfg) {
-  PropertiesService.getScriptProperties().setProperty(CFG_KEY, JSON.stringify(cfg));
+  PropertiesService.getUserProperties().setProperty(CFG_KEY, JSON.stringify(cfg));
+}
+/** 관리자 화면용 계정 상태 요약 — 연결 여부·최근 실행만 기록함 (남의 데이터 내용은 저장하지 않음) */
+function writeStat_(patch) {
+  const email = me_();
+  if (!email) return;
+  const sp = PropertiesService.getScriptProperties();
+  const key = STAT_PREFIX + email;
+  let cur = {};
+  try { cur = JSON.parse(sp.getProperty(key) || '{}'); } catch (e) { cur = {}; }
+  sp.setProperty(key, JSON.stringify(Object.assign(cur, patch)));
 }
 const tz_ = () => Session.getScriptTimeZone() || 'Asia/Seoul';
 const fmt_ = (d, p) => Utilities.formatDate(d, tz_(), p || 'yyyy-MM-dd');
@@ -118,8 +155,8 @@ const dbTabName_ = cfg => 'DB_' + ((cfg.dbName || '').replace(/^\[DB\]\s*/, '').
  * ========================================================================= */
 function api_dashboard() {
   const a = requireAccess_();
-  const cfg = a.cfg;
-  const out = { account: Session.getEffectiveUser().getEmail(), me: a.email, isAdmin: a.admin, config: cfg, types: TYPES, source: null, db: null, runs: [], daily: [], triggers: describeTriggers_(), lastError: PropertiesService.getScriptProperties().getProperty(ERR_KEY) || '' };
+  const cfg = getCfg_();
+  const out = { account: Session.getEffectiveUser().getEmail(), me: a.email, isAdmin: a.admin, config: cfg, types: TYPES, source: null, db: null, runs: [], daily: [], triggers: describeTriggers_(), lastError: PropertiesService.getUserProperties().getProperty(ERR_KEY) || '' };
   if (cfg.sourceId) {
     try {
       const src = readSource_(cfg);
@@ -140,7 +177,8 @@ function api_dashboard() {
 }
 
 function api_listSpreadsheets() {
-  const cfg = requireAdmin_().cfg;
+  requireAccess_();
+  const cfg = getCfg_();
   const it = DriveApp.searchFiles("mimeType='application/vnd.google-apps.spreadsheet' and trashed=false");
   const out = [];
   while (it.hasNext() && out.length < 80) {
@@ -152,7 +190,7 @@ function api_listSpreadsheets() {
 }
 
 function api_listFolders() {
-  requireAdmin_();
+  requireAccess_();
   const root = DriveApp.getRootFolder();
   const out = [{ id: root.getId(), name: '내 드라이브' }];
   const it = DriveApp.searchFolders("trashed=false and 'me' in owners");
@@ -161,13 +199,14 @@ function api_listFolders() {
 }
 
 function api_getTabs(sheetId) {
-  requireAdmin_();
+  requireAccess_();
   return SpreadsheetApp.openById(sheetId).getSheets().map(s => s.getName());
 }
 
 /** 원본 컬럼·값 성격·샘플 3행·추천 키/제목 */
 function api_getColumns() {
-  const cfg = requireAdmin_().cfg;
+  requireAccess_();
+  const cfg = getCfg_();
   if (!cfg.sourceId || !cfg.sourceTab) throw new Error('원본 · 저장 위치에서 원본 시트와 탭을 먼저 저장함');
   const src = readSource_(cfg);
   const cols = [];
@@ -186,7 +225,8 @@ function api_getColumns() {
 }
 
 function api_saveConnection(p) {
-  const cfg = requireAdmin_().cfg;
+  requireAccess_();
+  const cfg = getCfg_();
   if (!p.sourceId || !p.sourceTab) throw new Error('원본 스프레드시트와 시트 탭을 선택함');
   if (p.dbMode === 'exist' && !p.dbId) throw new Error('사용할 기존 DB 파일을 선택함');
   if (p.dbMode === 'new' && !String(p.dbName || '').trim()) throw new Error('DB 파일명을 입력함');
@@ -205,11 +245,15 @@ function api_saveConnection(p) {
   cfg.sourceId = p.sourceId; cfg.sourceTab = p.sourceTab; cfg.headerRow = hr;
   setCfg_(cfg);
   if (cfg.rules.trigger === 'edit') installTriggers_(cfg);   // 원본이 바뀌면 편집 트리거도 다시 연결
+  let srcName = cfg.sourceTab;
+  try { srcName = SpreadsheetApp.openById(cfg.sourceId).getName() + ' › ' + cfg.sourceTab; } catch (e) { /* 이름 조회 실패 시 탭명만 기록 */ }
+  writeStat_({ source: srcName, db: cfg.dbId ? cfg.dbName : cfg.dbName + ' (첫 실행 때 생성)' });
   return cfg;
 }
 
 function api_saveSchema(p) {
-  const cfg = requireAdmin_().cfg;
+  requireAccess_();
+  const cfg = getCfg_();
   const on = (p.schema || []).filter(s => s.on);
   if (!on.length) throw new Error('DB에 넣을 컬럼이 최소 1개 필요함');
   if (!on.some(s => s.type === '제목')) throw new Error('제목 속성 1개를 지정함');
@@ -226,26 +270,31 @@ function api_saveSchema(p) {
 }
 
 function api_saveRules(r) {
-  const cfg = requireAdmin_().cfg;
+  requireAccess_();
+  const cfg = getCfg_();
   if (r.teams && !/^https:\/\//.test(r.teams)) throw new Error('Teams 웹훅 URL은 https://로 시작해야 함');
   if (r.trigger === 'edit' && !cfg.sourceId) throw new Error('원본 시트를 먼저 저장함');
   if (r.every === 'daily' && !/^\d{1,2}:\d{2}$/.test(r.dailyTime || '')) throw new Error('실행 시각 형식이 올바르지 않음 (예: 08:50)');
   cfg.rules = Object.assign({}, DEFAULT_RULES, r, { conds: (r.conds || []).filter(c => c.col && c.op) });
   setCfg_(cfg);
   installTriggers_(cfg);
-  return { config: cfg, triggers: describeTriggers_() };
+  const trg = describeTriggers_();
+  writeStat_({ auto: trg.text });
+  return { config: cfg, triggers: trg };
 }
 
 function api_runSync() { requireAccess_(); return runSync_('수동'); }
 
 function api_getRuns(days) {
-  const cfg = requireAccess_().cfg;
+  requireAccess_();
+  const cfg = getCfg_();
   if (!cfg.dbId) return [];
   return readRuns_(SpreadsheetApp.openById(cfg.dbId), Number(days) || 7);
 }
 
 function api_getRunDetail(runId) {
-  const cfg = requireAccess_().cfg;
+  requireAccess_();
+  const cfg = getCfg_();
   const sh = SpreadsheetApp.openById(cfg.dbId).getSheetByName(TAB.detail);
   if (!sh || sh.getLastRow() < 2) return [];
   return sh.getRange(2, 1, sh.getLastRow() - 1, 4).getValues()
@@ -255,7 +304,8 @@ function api_getRunDetail(runId) {
 
 /** DB 뷰 화면: 본문 레코드 + 파일 구조 */
 function api_getDbView() {
-  const cfg = requireAccess_().cfg;
+  requireAccess_();
+  const cfg = getCfg_();
   if (!cfg.dbId) return { exists: false, name: cfg.dbName };
   const ss = SpreadsheetApp.openById(cfg.dbId);
   const main = ss.getSheetByName(dbTabName_(cfg));
@@ -288,30 +338,30 @@ function api_getDbView() {
   };
 }
 
-/** 사용자 관리 — 관리자 전용 */
+/** 사용자 관리 — 관리자 전용. 등록·삭제 = 출입 통제이며, 각 계정의 작업 공간(원본·DB·규칙)은 각자 소유함 */
 function api_getUsers() {
-  const cfg = requireAdmin_().cfg;
-  return { admin: cfg.adminEmail, users: cfg.allowedUsers || [] };
+  const a = requireAdmin_();
+  const sp = PropertiesService.getScriptProperties();
+  const stat = email => { try { return JSON.parse(sp.getProperty(STAT_PREFIX + email) || '{}'); } catch (e) { return {}; } };
+  return {
+    admin: a.access.adminEmail,
+    adminStat: stat(a.access.adminEmail),
+    users: (a.access.allowedUsers || []).map(e => ({ email: e, stat: stat(e) })),
+  };
 }
 
 function api_saveUsers(p) {
-  const cfg = requireAdmin_().cfg;
+  const acc = requireAdmin_().access;
   const emails = (p.users || [])
     .map(e => String(e).trim().toLowerCase())
     .filter(e => /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e))
-    .filter((e, i, a) => a.indexOf(e) === i && e !== String(cfg.adminEmail).toLowerCase());
-  const prev = cfg.allowedUsers || [];
-  const added = emails.filter(e => prev.indexOf(e) < 0);
-  cfg.allowedUsers = emails;
-  setCfg_(cfg);
-  const warns = [];
-  added.forEach(email => {
-    [cfg.sourceId, cfg.dbId].filter(Boolean).forEach(id => {
-      try { DriveApp.getFileById(id).addEditor(email); }
-      catch (e) { warns.push(email + ' 파일 공유 실패: ' + e.message); }
-    });
-  });
-  return { users: cfg.allowedUsers, warns };
+    .filter((e, i, a) => a.indexOf(e) === i && e !== String(acc.adminEmail).toLowerCase());
+  const removed = (acc.allowedUsers || []).filter(e => emails.indexOf(e) < 0);
+  acc.allowedUsers = emails;
+  setAccess_(acc);
+  const sp = PropertiesService.getScriptProperties();
+  removed.forEach(e => sp.deleteProperty(STAT_PREFIX + e));   // 삭제 계정의 트리거는 다음 실행 때 스스로 해제됨
+  return { users: acc.allowedUsers };
 }
 
 /* =========================================================================
@@ -343,13 +393,21 @@ function describeTriggers_() {
   return { text: '시간 기반 · ' + txt, active: installed.indexOf('trg_time') >= 0 };
 }
 
-function trg_time() { runSync_('시간 기반'); }
+/** 허용 목록에서 제외된 계정의 트리거는 실행 시점에 스스로 해제됨 */
+function triggerAllowed_() {
+  if (accessInfo_().allowed) return true;
+  ScriptApp.getProjectTriggers().forEach(t => { if (HANDLERS_.indexOf(t.getHandlerFunction()) >= 0) ScriptApp.deleteTrigger(t); });
+  return false;
+}
+
+function trg_time() { if (!triggerAllowed_()) return; runSync_('시간 기반'); }
 
 /** 원본 편집 시 1분 뒤 한 번만 실행 (연속 편집을 묶어서 처리) */
 function trg_edit(e) {
+  if (!triggerAllowed_()) return;
   const cfg = getCfg_();
   try { if (e && e.range && e.range.getSheet().getName() !== cfg.sourceTab) return; } catch (x) { /* 무시 */ }
-  const lock = LockService.getScriptLock();
+  const lock = LockService.getUserLock();
   if (!lock.tryLock(5000)) return;
   try {
     const pending = ScriptApp.getProjectTriggers().some(t => t.getHandlerFunction() === 'trg_editFlush');
@@ -358,6 +416,7 @@ function trg_edit(e) {
 }
 function trg_editFlush() {
   ScriptApp.getProjectTriggers().forEach(t => { if (t.getHandlerFunction() === 'trg_editFlush') ScriptApp.deleteTrigger(t); });
+  if (!triggerAllowed_()) return;
   runSync_('원본 편집');
 }
 
@@ -365,7 +424,7 @@ function trg_editFlush() {
  * 동기화 본체
  * ========================================================================= */
 function runSync_(trigger) {
-  const lock = LockService.getScriptLock();
+  const lock = LockService.getUserLock();   // 계정별 직렬화 — 다른 계정의 실행과는 겹쳐도 됨
   if (!lock.tryLock(20000)) return { skipped: true, message: '다른 실행이 진행 중이라 건너뜀' };
   const t0 = new Date();
   const runId = 'RUN-' + fmt_(t0, 'MMdd-HHmmss') + String(t0.getMilliseconds()).padStart(3, '0');   // 같은 초 실행과 구분
@@ -479,10 +538,10 @@ function runSync_(trigger) {
     main.getRange(1, 1, 1, header.length).setValues([header]);
     if (rows.length) main.getRange(2, 1, rows.length, header.length).setValues(rows);
     writeSchema_(ss, cfg, props);
-    PropertiesService.getScriptProperties().deleteProperty(ERR_KEY);
+    PropertiesService.getUserProperties().deleteProperty(ERR_KEY);
   } catch (e) {
     fatal = e.message || String(e);
-    PropertiesService.getScriptProperties().setProperty(ERR_KEY, fmt_(t0, 'MM-dd HH:mm') + ' · ' + fatal);
+    PropertiesService.getUserProperties().setProperty(ERR_KEY, fmt_(t0, 'MM-dd HH:mm') + ' · ' + fatal);
   } finally {
     const end = new Date();
     const status = fatal ? '실패' : stat.f ? '부분 실패' : '성공';
@@ -491,6 +550,7 @@ function runSync_(trigger) {
       if (ss) writeLog_(ss, [runId, trigger, t0, end, stat.c, stat.u, stat.a, stat.f, stat.w, status, fatal], details);
     } catch (x) { /* 로그 기록 실패는 무시 */ }
     if (cfg && (fatal || stat.f)) notify_(cfg, runId, status, fatal, stat, ss);
+    try { writeStat_({ run: fmt_(t0, 'MM-dd HH:mm') + ' · ' + status }); } catch (x) { /* 요약 기록 실패 무시 */ }
     lock.releaseLock();
     result = { id: runId, trig: trigger, start: fmt_(t0, 'MM-dd HH:mm:ss'), end: fmt_(end, 'HH:mm:ss'), c: stat.c, u: stat.u, a: stat.a, f: stat.f, w: stat.w, status, message: fatal };
   }
