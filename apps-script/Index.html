@@ -282,6 +282,7 @@ a.btn{text-decoration:none;color:inherit}
       <button data-view="connect"><svg class="i" viewBox="0 0 24 24"><path d="M3 6a1 1 0 0 1 1-1h5l2 2h9a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z"/></svg>원본 · 저장 위치</button>
       <button data-view="schema"><svg class="i" viewBox="0 0 24 24"><path d="M4 6h6M4 12h6M4 18h6M14 6h6M14 12h6M14 18h6"/></svg>DB 속성 설계<span class="badge b-warn" id="navMap" hidden></span></button>
       <button data-view="rules"><svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/></svg>자동화 규칙</button>
+      <button data-view="users" id="navUsers" hidden><svg class="i" viewBox="0 0 24 24"><circle cx="9" cy="8" r="3.5"/><path d="M2.5 20c.8-3.2 3.4-5 6.5-5s5.7 1.8 6.5 5"/><circle cx="17.5" cy="9" r="2.5"/><path d="M15.5 14.6c2.9.2 5 1.9 5.7 4.4"/></svg>사용자 관리</button>
     </nav>
     <div class="side-foot">
       <span>실행 계정</span>
@@ -489,6 +490,27 @@ a.btn{text-decoration:none;color:inherit}
           <div id="pvBox"></div>
         </div>
       </section>
+
+      <!-- 사용자 관리 -->
+      <section data-panel="users" hidden>
+        <div id="usersErr"></div>
+        <div class="card">
+          <div class="card-h"><h2>사용 허용 계정</h2><span class="sub">관리자 외에 이 웹앱을 쓸 Google 계정</span>
+            <div class="act"><button class="btn primary" id="btnSaveUsers">저장</button></div></div>
+          <div class="card-b" style="display:flex;flex-direction:column;gap:14px">
+            <div class="row"><span class="chip mono" id="adminChip"></span><span class="hint">관리자 — 항상 접근 가능, 설정 변경 권한 보유</span></div>
+            <div class="row">
+              <input class="input" id="userEmail" type="email" placeholder="example@gmail.com" style="max-width:320px" aria-label="추가할 이메일">
+              <button class="btn" id="btnAddUser">추가</button>
+            </div>
+            <div id="userList" style="display:flex;flex-direction:column;gap:8px"></div>
+            <div class="hint">저장 시 원본시트와 DB 파일이 해당 계정에 편집자로 자동 공유됨.
+            추가된 사용자는 조회 · 실행 이력 · "지금 DB 갱신"만 가능하고(설정 변경은 관리자 전용),
+            첫 접속 때 Google 권한 승인(확인되지 않은 앱 → 고급 → 이동)이 한 번 필요함.
+            목록에서 삭제하면 웹앱 접근이 즉시 차단됨(파일 공유 해제는 Drive에서 직접).</div>
+          </div>
+        </div>
+      </section>
     </main>
   </div>
 </div>
@@ -524,7 +546,7 @@ const state = {
   view:'dash', dash:null, cfg:null, account:'',
   sheets:null, folders:null, tabs:[], form:null,
   cols:null, schema:null, keyCol:'', conds:[],
-  runs:null, dbv:null, pv:'table', busy:false,
+  runs:null, dbv:null, pv:'table', busy:false, users:[],
 };
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
@@ -553,8 +575,8 @@ const statusKey = s => s==='성공'?'ok': s==='부분 실패'?'warn': s==='실�
 const trigText = r => r.trigger==='manual'?'수동 실행': r.trigger==='edit'?'원본 편집 감지':'시간 기반 · '+({'15m':'15분마다','1h':'1시간마다'}[r.every] || '매일 '+r.dailyTime);
 
 /* ===================================================================== 내비게이션 */
-const TITLES = { dash:'대시보드', db:'DB 뷰', history:'실행 이력', connect:'원본 · 저장 위치', schema:'DB 속성 설계', rules:'자동화 규칙' };
-const LOADERS = { dash:loadDash, db:loadDb, history:loadHistory, connect:loadConnect, schema:loadSchema, rules:loadRules };
+const TITLES = { dash:'대시보드', db:'DB 뷰', history:'실행 이력', connect:'원본 · 저장 위치', schema:'DB 속성 설계', rules:'자동화 규칙', users:'사용자 관리' };
+const LOADERS = { dash:loadDash, db:loadDb, history:loadHistory, connect:loadConnect, schema:loadSchema, rules:loadRules, users:loadUsers };
 function go(v){
   state.view = v;
   document.querySelectorAll('[data-panel]').forEach(p => p.hidden = p.dataset.panel !== v);
@@ -573,7 +595,40 @@ function renderChrome(){
   $('#crumbDb').textContent = d.db && d.db.ok ? d.db.name : (c.dbName || '미설정');
   const fails = (d.runs||[]).filter(r => r.days===0 && r.status!=='성공').length;
   $('#navFail').textContent = fails; $('#navFail').hidden = !fails;
+  $('#navUsers').hidden = !d.isAdmin;
 }
+
+/* ===================================================================== 사용자 관리 */
+async function loadUsers(){
+  showErr('#usersErr', null);
+  try{
+    const d = await api('api_getUsers');
+    state.users = d.users || [];
+    $('#adminChip').textContent = d.admin || '—';
+    renderUsers();
+  }catch(e){ showErr('#usersErr', e); }
+}
+function renderUsers(){
+  const box = $('#userList');
+  box.innerHTML = state.users.length
+    ? state.users.map((u,i) => `<div class="row"><span class="chip mono">${esc(u)}</span><button class="btn ghost" data-del="${i}">${ICON.x}삭제</button></div>`).join('')
+    : '<span class="hint">등록된 추가 사용자 없음</span>';
+  box.querySelectorAll('[data-del]').forEach(b => b.onclick = () => { state.users.splice(+b.dataset.del,1); renderUsers(); });
+}
+$('#btnAddUser').onclick = () => {
+  const v = $('#userEmail').value.trim().toLowerCase();
+  if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(v)) return toast('이메일 형식이 올바르지 않음','bad');
+  if(state.users.includes(v)) return toast('이미 목록에 있음','bad');
+  state.users.push(v); $('#userEmail').value = ''; renderUsers();
+};
+$('#btnSaveUsers').onclick = async () => {
+  try{
+    const d = await api('api_saveUsers', { users: state.users });
+    state.users = d.users || []; renderUsers();
+    toast('사용자 목록 저장됨');
+    (d.warns||[]).forEach(w => toast(w,'bad'));
+  }catch(e){ toast(errMsg(e),'bad'); }
+};
 
 /* ===================================================================== 1. 대시보드 */
 async function loadDash(){
@@ -1035,7 +1090,7 @@ const DEMO = (() => {
   const daily = () => ['09-19','09-20','09-21','09-22','09-23','09-24','09-25'].map(d => { const rs = runs.filter(r=>r.day===d); const s = k => rs.reduce((a,r)=>a+r[k],0); return { d, c:s('c'), u:s('u'), a:s('a'), f:s('f') }; });
   const kept = () => ROWS.filter(r => r[7] !== '종료');
   return {
-    api_dashboard: () => ({ account:'pm@example.co.kr', config:cfg, source:{ ok:true, name:'제안사업 관리대장', tab:cfg.sourceTab, cols:12, rows:ROWS.length },
+    api_dashboard: () => ({ account:'pm@example.co.kr', me:'pm@example.co.kr', isAdmin:true, config:cfg, source:{ ok:true, name:'제안사업 관리대장', tab:cfg.sourceTab, cols:12, rows:ROWS.length },
       db:{ ok:true, name:cfg.dbName, url:'', tab:'DB_제안사업', records:kept().length, archived:ROWS.length-kept().length },
       runs, daily:daily(), triggers:{ text:trigText(cfg.rules), active:true }, lastError:'' }),
     api_listSpreadsheets: () => [
@@ -1068,6 +1123,8 @@ const DEMO = (() => {
         structure:[ { name:'DB_제안사업', rows:rows.length, desc:'레코드 본문. 속성 설계대로 서식·드롭다운·틀 고정 적용' }, { name:'_schema', rows:on.length+4, desc:'속성명 · 유형 · 원본 컬럼 · 설명. GPT가 DB 의미를 해석하는 기준표' },
           { name:'_views', rows:3, desc:'보기 정의(필터 · 정렬 · 그룹). 팀 공통 조회 기준' }, { name:'_people', rows:4, desc:'사람 속성 드롭다운 원본 (이름 · 이메일)' },
           { name:'_archive', rows:ROWS.length-kept().length, desc:'원본에서 삭제되었거나 행 조건에서 제외된 레코드' }, { name:'_log', rows:runs.length, desc:'실행 이력 요약' }, { name:'_log_detail', rows:62, desc:'행 단위 처리 결과 (최근 5000행 유지)' } ] }; },
+    api_getUsers: () => ({ admin:'pm@example.co.kr', users:['kim@example.co.kr'] }),
+    api_saveUsers: p => ({ users:p.users, warns:[] }),
   };
 })();
 
