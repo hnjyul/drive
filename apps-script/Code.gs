@@ -365,6 +365,88 @@ function api_saveUsers(p) {
 }
 
 /* =========================================================================
+ * 빠른 시작 — 샘플 원본시트 · 구조 우선 설계
+ * 두 방식 모두 "원본시트 → DB 파생" 구조를 유지함: 생성된 원본시트가 입력처가 됨
+ * ========================================================================= */
+const SAMPLE_HEADER = ['사업번호', '사업명', '진행상태', '담당자', '마감일', '사업금액', '계약여부', '공고링크', '비고'];
+const SAMPLE_ROWS = [
+  ['P-2026-001', '스마트팜 통합관제 구축 제안', '진행 중', '김제안', '2026-10-15', 185000000, 'N', 'https://www.g2b.go.kr', '1차 PT 완료'],
+  ['P-2026-002', '공공데이터 개방 플랫폼 고도화', '검토', '이수주', '2026-10-24', 92000000, 'N', '', '요구사항 분석 중'],
+  ['P-2026-003', '항만 물류 디지털트윈 시범사업', '진행 중', '김제안', '2026-11-07', 240000000, 'N', 'https://www.g2b.go.kr', ''],
+  ['P-2026-004', 'AI 민원상담 챗봇 도입', '수주', '박담당', '2026-09-30', 66000000, 'Y', '', '계약 체결'],
+  ['P-2026-005', '재난안전 영상분석 실증', '탈락', '이수주', '2026-09-12', 130000000, 'N', '', '기술평가 2위'],
+  ['P-2026-006', '교통카드 데이터 분석 용역', '검토', '박담당', '2026-11-21', 48000000, 'N', '', ''],
+];
+const KIND_OF_TYPE = { '제목': 'text', '텍스트': 'text', 'URL': 'text', '숫자': 'number', '선택': 'select', '다중 선택': 'select', '날짜': 'date', '사람': 'person', '체크박스': 'bool' };
+
+/** 생성된 원본시트를 현재 계정 설정에 연결함. DB는 항상 새 파일 — 기존 DB를 덮어쓰지 않음 */
+function finishQuickStart_(cfg, ss, tab) {
+  cfg.sourceId = ss.getId();
+  cfg.sourceTab = tab;
+  cfg.headerRow = 1;
+  cfg.dbMode = 'new';
+  cfg.dbId = '';
+  setCfg_(cfg);
+  if (cfg.rules.trigger === 'edit') installTriggers_(cfg);
+  writeStat_({ source: ss.getName() + ' › ' + tab, db: cfg.dbName + ' (첫 실행 때 생성)' });
+  return cfg;
+}
+
+/** 예시 데이터가 담긴 원본시트를 만들어 바로 연결함 — 속성 설계에서 자동 추천을 받는 흐름 */
+function api_createSample() {
+  requireAccess_();
+  const cfg = getCfg_();
+  const ss = SpreadsheetApp.create('[원본 샘플] 제안사업 관리대장');
+  const sh = ss.getSheets()[0];
+  sh.setName('관리대장');
+  sh.getRange(1, 1, 1, SAMPLE_HEADER.length).setValues([SAMPLE_HEADER]).setFontWeight('bold').setBackground('#EEF1F6');
+  sh.getRange(2, 1, SAMPLE_ROWS.length, SAMPLE_HEADER.length).setValues(SAMPLE_ROWS);
+  sh.getRange(2, 6, SAMPLE_ROWS.length, 1).setNumberFormat('#,##0');
+  sh.setFrozenRows(1);
+  cfg.dbName = '[DB] 제안사업 샘플';
+  cfg.schema = [];
+  cfg.keyCol = '';
+  return { config: finishQuickStart_(cfg, ss, '관리대장'), url: ss.getUrl() };
+}
+
+/** 속성 구조를 먼저 정의하면 그 설계대로 입력용 원본시트를 만들어 연결함 (노션식 시작) */
+function api_createFromDesign(p) {
+  requireAccess_();
+  const cfg = getCfg_();
+  const name = String((p && p.name) || '').trim().slice(0, 60);
+  if (!name) throw new Error('DB 이름을 입력함');
+  const props = ((p && p.props) || [])
+    .map(x => ({ prop: String(x.prop || '').trim(), type: TYPES[x.type] ? x.type : '', key: !!x.key }))
+    .filter(x => x.prop);
+  if (!props.length) throw new Error('속성을 1개 이상 정의함');
+  if (props.some(x => !x.type)) throw new Error('알 수 없는 속성 유형이 있음');
+  const names = props.map(x => x.prop);
+  if (new Set(names).size !== names.length) throw new Error('속성명이 중복됨: ' + names.filter((n, i) => names.indexOf(n) !== i).join(', '));
+  if (names.some(n => META.indexOf(n) >= 0)) throw new Error('_로 시작하는 시스템 컬럼명은 속성명으로 쓸 수 없음');
+  if (props.filter(x => x.type === '제목').length !== 1) throw new Error('제목 속성 1개를 지정함');
+  const keys = props.filter(x => x.key);
+  if (keys.length !== 1) throw new Error('고유 키 속성 1개를 지정함');
+
+  const ss = SpreadsheetApp.create('[원본] ' + name);
+  const sh = ss.getSheets()[0];
+  sh.setName('입력');
+  sh.getRange(1, 1, 1, props.length).setValues([names]).setFontWeight('bold').setBackground('#EEF1F6');
+  sh.setFrozenRows(1);
+  props.forEach((x, j) => {
+    const rg = sh.getRange(2, j + 1, 300, 1);   // 입력을 돕는 초기 서식 (300행)
+    if (x.type === '숫자') rg.setNumberFormat('#,##0');
+    else if (x.type === '날짜') rg.setNumberFormat('yyyy-mm-dd');
+    else if (x.type === '체크박스') rg.setDataValidation(SpreadsheetApp.newDataValidation().requireCheckbox().build());
+    else rg.setNumberFormat('@');
+  });
+
+  cfg.dbName = '[DB] ' + name;
+  cfg.schema = props.map(x => ({ col: x.prop, kind: KIND_OF_TYPE[x.type] || 'text', prop: x.prop, type: x.type, on: true }));
+  cfg.keyCol = keys[0].prop;
+  return { config: finishQuickStart_(cfg, ss, '입력'), url: ss.getUrl() };
+}
+
+/* =========================================================================
  * 트리거
  * ========================================================================= */
 const HANDLERS_ = ['trg_time', 'trg_edit', 'trg_editFlush'];

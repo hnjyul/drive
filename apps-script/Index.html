@@ -306,6 +306,15 @@ a.btn{text-decoration:none;color:inherit}
       <!-- 대시보드 -->
       <section data-panel="dash">
         <div id="dashErr"></div>
+        <div class="card" id="quickStart" hidden style="margin-bottom:20px">
+          <div class="card-b" style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+            <b style="font-size:13.5px">아직 원본시트가 연결되지 않음 —</b>
+            <button class="btn primary" id="qsSample">샘플로 시작</button>
+            <button class="btn" id="qsDesign">구조부터 설계</button>
+            <button class="btn ghost" id="qsConnect">내 시트 연결</button>
+            <span class="hint">샘플: 예시 원본을 만들어 전체 흐름을 바로 체험 · 구조부터: 속성을 정의하면 입력용 원본시트를 생성함</span>
+          </div>
+        </div>
         <div class="card">
           <div class="card-h"><h2>변환 파이프라인</h2><span class="sub">Google Drive 안에서만 처리함 · 외부 서비스 연동 없음</span></div>
           <div class="flow" id="flow"></div>
@@ -336,6 +345,14 @@ a.btn{text-decoration:none;color:inherit}
       <!-- 원본 · 저장 위치 -->
       <section data-panel="connect" hidden>
         <div id="connErr"></div>
+        <div class="card" style="margin-bottom:20px">
+          <div class="card-b" style="display:flex;gap:10px;flex-wrap:wrap;align-items:center">
+            <b style="font-size:13.5px">빠른 시작</b>
+            <button class="btn" id="btnSample">샘플로 시작</button>
+            <button class="btn" id="btnDesign">구조부터 설계</button>
+            <span class="hint">원본이 아직 없으면 여기서 시작 — 아래에서 직접 연결해도 됨</span>
+          </div>
+        </div>
         <div class="card"><div class="stepper" id="stepper"></div></div>
         <div class="grid2">
           <div class="card">
@@ -552,7 +569,7 @@ const state = {
   view:'dash', dash:null, cfg:null, account:'',
   sheets:null, folders:null, tabs:[], form:null,
   cols:null, schema:null, keyCol:'', conds:[],
-  runs:null, dbv:null, pv:'table', busy:false, users:[], userStats:{},
+  runs:null, dbv:null, pv:'table', busy:false, users:[], userStats:{}, design:null,
 };
 const $ = s => document.querySelector(s);
 const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
@@ -654,11 +671,13 @@ function renderDash(loading){
   const d = state.dash || {};
   const c = state.cfg || { rules:{} };
   if(loading){
+    $('#quickStart').hidden = true;
     $('#flow').innerHTML = [0,1,2].map(i => (i?`<div class="flow-arrow">${ICON.arrow}</div>`:'') + `<div class="flow-node"><div class="conn-top"><div class="conn-ico"></div><div class="skel" style="width:50%"></div></div><div class="skel" style="width:90%"></div><div class="skel" style="width:60%"></div></div>`).join('');
     $('#lastStats').innerHTML = ['추가','갱신','보관','실패'].map(k=>`<div class="stat"><div class="k">${k}</div><div class="skel" style="width:40px;height:22px;margin-top:6px"></div></div>`).join('');
     $('#chartBox').innerHTML = '<div class="skel" style="height:160px"></div>';
     return;
   }
+  $('#quickStart').hidden = !!d.source;
   const schemaOk = (c.schema||[]).some(s=>s.on) && c.keyCol;
   const nodes = [
     { ico:ICON.sheet, name:'원본시트',
@@ -798,6 +817,74 @@ $('#btnSaveConn').onclick = async () => {
   }catch(e){ toast(errMsg(e), 'bad'); }
   finally{ btn.disabled = false; }
 };
+
+/* ===================================================================== 빠른 시작 */
+function resetAfterQuickStart(cfg){
+  state.cfg = cfg; state.form = null; state.sheets = null; state.tabs = [];
+  state.cols = null; state.schema = null; state.dash = null; state.dbv = null; state.runs = null;
+}
+async function startSample(btn){
+  if(state.cfg && state.cfg.sourceId && !confirm('이미 연결된 원본이 있음. 샘플 원본으로 교체할까? (기존 DB 파일은 건드리지 않고 새 DB로 시작함)')) return;
+  btn.disabled = true;
+  try{
+    const d = await api('api_createSample');
+    resetAfterQuickStart(d.config);
+    toast('샘플 원본시트가 생성되어 연결됨 — 속성 자동 추천을 확인함');
+    go('schema');
+  }catch(e){ toast(errMsg(e), 'bad'); }
+  finally{ btn.disabled = false; }
+}
+function openDesign(){
+  if(state.cfg && state.cfg.sourceId && !confirm('이미 연결된 원본이 있음. 새 구조로 교체할까? (기존 DB 파일은 건드리지 않고 새 DB로 시작함)')) return;
+  state.design = { name:'', rows:[ {prop:'고유번호', type:'텍스트', key:true}, {prop:'제목', type:'제목', key:false} ] };
+  renderDesign();
+}
+function renderDesign(){
+  const d = state.design;
+  const typeOpts = t => Object.keys(PROP_TYPES).map(k => `<option ${k===t?'selected':''}>${k}</option>`).join('');
+  $('#overlay').innerHTML = `<div class="scrim" data-close></div><aside class="drawer" role="dialog" aria-modal="true" aria-labelledby="dsT">
+    <div class="drawer-h"><h3 id="dsT" style="font-size:14px">구조부터 설계</h3><button class="btn ghost" data-close style="margin-left:auto;padding:6px" aria-label="닫기">${ICON.x}</button></div>
+    <div class="drawer-b">
+      <div class="field"><label for="dsName">DB 이름</label><input class="input" id="dsName" type="text" placeholder="예: 제안사업" value="${esc(d.name)}"></div>
+      <div class="tbl-wrap card"><table><thead><tr><th>속성명</th><th>유형</th><th style="text-align:center">고유 키</th><th></th></tr></thead><tbody>
+        ${d.rows.map((r,i)=>`<tr>
+          <td><input class="input" data-ds-prop="${i}" value="${esc(r.prop)}" aria-label="속성명"></td>
+          <td><select class="input" data-ds-type="${i}">${typeOpts(r.type)}</select></td>
+          <td style="text-align:center"><input type="radio" name="dskey" data-ds-key="${i}" ${r.key?'checked':''} aria-label="고유 키"></td>
+          <td><button class="btn ghost" data-ds-del="${i}" ${d.rows.length<=1?'disabled':''} aria-label="삭제">${ICON.x}</button></td></tr>`).join('')}
+      </tbody></table></div>
+      <div class="row" style="justify-content:space-between">
+        <button class="btn" id="dsAdd">속성 추가</button>
+        <button class="btn primary" id="dsCreate">원본시트 생성 · 연결</button>
+      </div>
+      <span class="hint">설계대로 입력용 원본시트(유형별 서식)가 만들어지고, 데이터를 입력하면 DB로 정규화됨. 제목 1개 · 고유 키 1개 필요함.</span>
+    </div></aside>`;
+  const ov = $('#overlay');
+  $('#dsName').oninput = e => { d.name = e.target.value; };
+  ov.querySelectorAll('[data-ds-prop]').forEach(el => el.oninput = e => { d.rows[+el.dataset.dsProp].prop = e.target.value; });
+  ov.querySelectorAll('[data-ds-type]').forEach(el => el.onchange = e => {
+    const i = +el.dataset.dsType, v = e.target.value;
+    if(v==='제목') d.rows.forEach((r,j)=>{ if(j!==i && r.type==='제목') r.type='텍스트'; });
+    d.rows[i].type = v; renderDesign();
+  });
+  ov.querySelectorAll('[data-ds-key]').forEach(el => el.onchange = () => { d.rows.forEach((r,j)=> r.key = j===+el.dataset.dsKey); });
+  ov.querySelectorAll('[data-ds-del]').forEach(el => el.onclick = () => { d.rows.splice(+el.dataset.dsDel,1); if(!d.rows.some(r=>r.key) && d.rows[0]) d.rows[0].key = true; renderDesign(); });
+  $('#dsAdd').onclick = () => { d.rows.push({ prop:'', type:'텍스트', key:false }); renderDesign(); };
+  $('#dsCreate').onclick = async () => {
+    const btn = $('#dsCreate'); btn.disabled = true; btn.textContent = '생성 중…';
+    try{
+      const res = await api('api_createFromDesign', { name: state.design.name, props: state.design.rows });
+      resetAfterQuickStart(res.config);
+      closeOverlay();
+      toast('원본시트가 생성되어 연결됨 — 첫 갱신으로 DB 뼈대를 만듦');
+      go('dash');
+      $('#btnSyncNow').click();
+    }catch(e){ toast(errMsg(e), 'bad'); btn.disabled = false; btn.textContent = '원본시트 생성 · 연결'; }
+  };
+}
+['#btnSample','#qsSample'].forEach(s => { $(s).onclick = () => startSample($(s)); });
+['#btnDesign','#qsDesign'].forEach(s => { $(s).onclick = openDesign; });
+$('#qsConnect').onclick = () => go('connect');
 
 /* ===================================================================== 3. DB 속성 설계 */
 async function loadSchema(){
@@ -1140,6 +1227,13 @@ const DEMO = (() => {
       users:[{ email:'kim@example.co.kr', stat:{} }],
     }),
     api_saveUsers: p => ({ users:p.users }),
+    api_createSample: () => { Object.assign(cfg, { sourceId:'s9', sourceTab:'관리대장', headerRow:1, dbMode:'new', dbId:'', dbName:'[DB] 제안사업 샘플', schema:[], keyCol:'' }); return { config:cfg, url:'' }; },
+    api_createFromDesign: p => {
+      const props = (p.props||[]).filter(x=>String(x.prop||'').trim());
+      Object.assign(cfg, { sourceId:'s8', sourceTab:'입력', headerRow:1, dbMode:'new', dbId:'', dbName:'[DB] '+p.name,
+        schema: props.map(x=>({ col:x.prop, kind:'text', prop:x.prop, type:x.type, on:true })), keyCol:(props.find(x=>x.key)||{}).prop||'' });
+      return { config:cfg, url:'' };
+    },
   };
 })();
 
