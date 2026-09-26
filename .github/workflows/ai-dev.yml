@@ -119,7 +119,7 @@ jobs:
 
       - name: Create PR
         run: |
-          BODY="자동 생성된 PR입니다. 병합 시 \`deploy.yml\`이 운영 환경에 배포합니다."
+          BODY="자동 생성된 PR입니다. 병합 시 Cloudflare Git 연동이 운영 환경에 자동 배포합니다."
           if [ -n "${{ github.event.issue.number }}" ]; then
             BODY="Closes #${{ github.event.issue.number }}"$'\n\n'"$BODY"
           fi
