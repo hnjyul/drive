@@ -31,7 +31,7 @@ describe("fetch handler", () => {
     expect(healthBody.status).toBe("ok");
 
     const fallback = await worker.fetch(new Request("http://localhost/"), env);
-    expect(fallback.status).toBe(200);
-    expect(await fallback.text()).toContain("drive");
+    expect(fallback.status).toBe(302);
+    expect(fallback.headers.get("location")).toBe("http://localhost/db");
   });
 });

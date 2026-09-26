@@ -312,10 +312,7 @@ export default {
       }
     }
 
-    const menuItems = await loadMenuItems(env);
-
-    return new Response(buildIndexHtml(menuItems), {
-      headers: { "content-type": "text/html; charset=utf-8" },
-    });
+    // 루트를 포함한 기타 경로는 시트 DB 빌더로 바로 연결함 (링크 허브 페이지는 사용하지 않음)
+    return Response.redirect(new URL("/db", url).toString(), 302);
   },
 };

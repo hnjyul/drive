@@ -1,17 +1,14 @@
 import { test, expect } from "@playwright/test";
 
-test("GET / 는 drive 제목과 /health, /version 링크를 렌더링한다", async ({ page }) => {
+test("GET / 는 /db의 시트 DB 빌더 임베드 화면으로 연결된다", async ({ page }) => {
   await page.goto("/");
 
-  await expect(page.locator("h1")).toHaveText(/drive/);
-
-  const healthLink = page.getByRole("link", { name: "/health" });
-  const versionLink = page.getByRole("link", { name: "/version" });
-  await expect(healthLink).toHaveAttribute("href", "/health");
-  await expect(versionLink).toHaveAttribute("href", "/version");
+  await expect(page).toHaveURL(/\/db$/);
+  await expect(page.locator('iframe[title="시트 DB 빌더"]')).toHaveCount(1);
+  await expect(page.getByRole("link", { name: /여기로 열기/ })).toBeVisible();
 });
 
-test("/ 페이지의 링크가 가리키는 /health, /version 은 기존과 동일한 JSON을 반환한다", async ({
+test("/health, /version 은 기존과 동일한 JSON을 반환한다", async ({
   request,
 }) => {
   const health = await request.get("/health");

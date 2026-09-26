@@ -19,10 +19,10 @@ describe("fetch handler", () => {
     expect(body.service).toBe("drive");
   });
 
-  it("그 외 경로는 안내 텍스트를 반환한다", async () => {
+  it("그 외 경로는 /db로 302 리다이렉트한다", async () => {
     const res = await worker.fetch(new Request("http://localhost/"), createMockEnv());
-    expect(res.status).toBe(200);
-    expect(await res.text()).toContain("drive");
+    expect(res.status).toBe(302);
+    expect(res.headers.get("location")).toBe("http://localhost/db");
   });
 
   it("GET /db 는 주소를 유지한 채 웹앱을 임베드하는 HTML을 반환한다", async () => {

@@ -58,18 +58,18 @@ describe("fetch handler", () => {
     global.fetch = originalFetch;
   });
 
-  it("GET / 는 text/html 응답으로 buildIndexHtml() 결과를 반환한다", async () => {
+  it("GET / 는 /db로 302 리다이렉트한다", async () => {
     const res = await worker.fetch(new Request("http://localhost/"), createMockEnv());
-    expect(res.status).toBe(200);
-    expect(res.headers.get("content-type")).toMatch(/^text\/html; charset=utf-8/);
-    expect(await res.text()).toBe(buildIndexHtml());
+    expect(res.status).toBe(302);
+    expect(res.headers.get("location")).toBe("http://localhost/db");
   });
 
-  it("정의되지 않은 기타 경로도 동일한 HTML 페이지를 반환한다", async () => {
-    const res = await worker.fetch(new Request("http://localhost/foo"), createMockEnv());
-    expect(res.status).toBe(200);
-    expect(res.headers.get("content-type")).toMatch(/^text\/html; charset=utf-8/);
-    expect(await res.text()).toBe(buildIndexHtml());
+  it("정의되지 않은 기타 경로(/index.html 포함)도 /db로 302 리다이렉트한다", async () => {
+    for (const path of ["/index.html", "/foo"]) {
+      const res = await worker.fetch(new Request(`http://localhost${path}`), createMockEnv());
+      expect(res.status).toBe(302);
+      expect(res.headers.get("location")).toBe("http://localhost/db");
+    }
   });
 
   it("GET /health, GET /version 라우팅은 회귀 없이 동작한다", async () => {
@@ -83,26 +83,4 @@ describe("fetch handler", () => {
     expect(version.headers.get("content-type")).toContain("application/json");
   });
 
-  it("드라이브 ID가 저장되어 있고 시트 조회에 성공하면 시트 메뉴로 렌더링한다", async () => {
-    const env = createMockEnv({ driveId: "sheet123" });
-    const csv = '메뉴명,경로,순서\n"공지","/notice","2"\n"홈","/home","1"';
-    const fetchMock = jest.fn().mockResolvedValue(new Response(csv, { status: 200 }));
-    global.fetch = fetchMock as unknown as typeof fetch;
-
-    const res = await worker.fetch(new Request("http://localhost/"), env);
-    const html = await res.text();
-    expect(html.indexOf('href="/home"')).toBeLessThan(html.indexOf('href="/notice"'));
-    expect(html).not.toContain('href="/settings"');
-  });
-
-  it("드라이브 ID는 있으나 시트 조회가 실패하면 기본 링크로 폴백한다", async () => {
-    const env = createMockEnv({ driveId: "sheet123" });
-    const fetchMock = jest.fn().mockRejectedValue(new Error("network error"));
-    global.fetch = fetchMock as unknown as typeof fetch;
-
-    const res = await worker.fetch(new Request("http://localhost/"), env);
-    const html = await res.text();
-    expect(html).toContain('href="/health"');
-    expect(html).toContain('href="/settings"');
-  });
 });
