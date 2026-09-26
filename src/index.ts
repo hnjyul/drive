@@ -190,6 +190,30 @@ export function buildIndexHtml(menuItems: MenuItem[] = []): string {
 </html>`;
 }
 
+export function buildDbEmbedHtml(scriptUrl: string): string {
+  const safeUrl = escapeHtml(scriptUrl);
+  return `<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>시트 DB 빌더</title>
+  <style>
+    html, body { margin: 0; height: 100%; }
+    iframe { display: block; border: 0; width: 100%; height: 100%; }
+    .fallback { position: fixed; right: 10px; bottom: 10px; font: 12px system-ui, sans-serif;
+      background: rgba(15, 23, 42, 0.72); color: #fff; padding: 6px 12px; border-radius: 999px;
+      text-decoration: none; opacity: 0.85; }
+    .fallback:hover { opacity: 1; }
+  </style>
+</head>
+<body>
+  <iframe src="${safeUrl}" title="시트 DB 빌더" allow="clipboard-write"></iframe>
+  <a class="fallback" href="${safeUrl}" target="_blank" rel="noopener">화면이 비어 있으면 여기로 열기</a>
+</body>
+</html>`;
+}
+
 async function getStoredDriveId(env: Env): Promise<string | null> {
   try {
     return await env.SETTINGS.get("driveId");
@@ -227,7 +251,12 @@ export default {
           headers: { "content-type": "text/plain; charset=utf-8" },
         });
       }
-      return Response.redirect(env.APPS_SCRIPT_URL, 302);
+      if (url.searchParams.has("direct")) {
+        return Response.redirect(env.APPS_SCRIPT_URL, 302);
+      }
+      return new Response(buildDbEmbedHtml(env.APPS_SCRIPT_URL), {
+        headers: { "content-type": "text/html; charset=utf-8" },
+      });
     }
 
     if (url.pathname === "/settings" && request.method === "GET") {

@@ -25,10 +25,21 @@ describe("fetch handler", () => {
     expect(await res.text()).toContain("drive");
   });
 
-  it("GET /db 는 APPS_SCRIPT_URL로 302 리다이렉트한다", async () => {
+  it("GET /db 는 주소를 유지한 채 웹앱을 임베드하는 HTML을 반환한다", async () => {
     const target = "https://script.google.com/macros/s/TEST/exec";
     const env = { ...createMockEnv(), APPS_SCRIPT_URL: target };
     const res = await worker.fetch(new Request("http://localhost/db"), env);
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toContain("text/html");
+    const html = await res.text();
+    expect(html).toContain(`<iframe src="${target}"`);
+    expect(html).toContain('target="_blank"');
+  });
+
+  it("GET /db?direct=1 은 APPS_SCRIPT_URL로 302 리다이렉트한다", async () => {
+    const target = "https://script.google.com/macros/s/TEST/exec";
+    const env = { ...createMockEnv(), APPS_SCRIPT_URL: target };
+    const res = await worker.fetch(new Request("http://localhost/db?direct=1"), env);
     expect(res.status).toBe(302);
     expect(res.headers.get("location")).toBe(target);
   });

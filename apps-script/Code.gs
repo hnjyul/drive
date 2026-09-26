@@ -55,11 +55,13 @@ function doGet() {
       + '<p>현재 계정: <b>' + (a.email || '확인 불가') + '</b></p>'
       + '<p>관리자(<b>' + (a.access.adminEmail || '아직 등록되지 않음') + '</b>)가 웹앱의 [사용자 관리]에서 이 이메일을 등록하면 사용할 수 있습니다.</p>'
       + '</body></html>';
-    return HtmlService.createHtmlOutput(html).setTitle('접근 권한 없음');
+    return HtmlService.createHtmlOutput(html).setTitle('접근 권한 없음')
+      .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);
   }
   return HtmlService.createHtmlOutputFromFile('Index')
     .setTitle('시트 DB 빌더')
-    .addMetaTag('viewport', 'width=device-width, initial-scale=1');
+    .addMetaTag('viewport', 'width=device-width, initial-scale=1')
+    .setXFrameOptionsMode(HtmlService.XFrameOptionsMode.ALLOWALL);   // drive.j2inlab.workers.dev/db 임베드 허용
 }
 
 /** 편집기에서 한 번 실행하여 Drive·Sheets·트리거·메일 권한을 승인함 (실행자가 관리자로 등록됨) */
