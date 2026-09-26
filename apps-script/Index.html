@@ -1,0 +1,1083 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<base target="_top">
+<title>시트 DB 빌더</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+:root{
+  --bg:#F5F7FA; --surface:#FFFFFF; --surface-2:#EEF1F6; --line:#DDE2EA; --line-strong:#C7CEDA;
+  --text:#18202E; --muted:#5D6778; --faint:#8A93A3;
+  --accent:#2563EB; --accent-soft:#E3ECFD; --accent-mid:#93B4F5; --on-accent:#FFFFFF;
+  --ok:#15803D; --ok-soft:#DCF3E4; --warn:#C2410C; --warn-soft:#FDEBDD; --bad:#C62828; --bad-soft:#FBE3E3; --idle:#6B7280; --idle-soft:#ECEEF2;
+  --shadow:0 8px 28px rgba(24,32,46,.14);
+  --sans:"Pretendard","IBM Plex Sans KR","Apple SD Gothic Neo","Malgun Gothic",system-ui,sans-serif;
+  --mono:"IBM Plex Mono",ui-monospace,Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    color-scheme:dark;
+    --bg:#0F131A; --surface:#161B24; --surface-2:#1D2430; --line:#283140; --line-strong:#364153;
+    --text:#E6EAF1; --muted:#A1AAB9; --faint:#737D8E;
+    --accent:#5B8DF6; --accent-soft:#1B2A48; --accent-mid:#3B5FA8; --on-accent:#0B1020;
+    --ok:#4ADE80; --ok-soft:#14301F; --warn:#FB923C; --warn-soft:#3A2414; --bad:#F87171; --bad-soft:#3A1818; --idle:#9CA3AF; --idle-soft:#232A35;
+    --shadow:0 8px 28px rgba(0,0,0,.45);
+  }
+}
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  --bg:#0F131A; --surface:#161B24; --surface-2:#1D2430; --line:#283140; --line-strong:#364153;
+  --text:#E6EAF1; --muted:#A1AAB9; --faint:#737D8E;
+  --accent:#5B8DF6; --accent-soft:#1B2A48; --accent-mid:#3B5FA8; --on-accent:#0B1020;
+  --ok:#4ADE80; --ok-soft:#14301F; --warn:#FB923C; --warn-soft:#3A2414; --bad:#F87171; --bad-soft:#3A1818; --idle:#9CA3AF; --idle-soft:#232A35;
+  --shadow:0 8px 28px rgba(0,0,0,.45);
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{background:var(--bg);color:var(--text);font-family:var(--sans);font-size:14px;line-height:1.55;-webkit-font-smoothing:antialiased}
+button,input,select{font:inherit;color:inherit}
+.mono{font-family:var(--mono);font-size:12.5px}
+.num{font-variant-numeric:tabular-nums}
+svg.i{width:16px;height:16px;flex:none;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+
+/* layout */
+.app{display:grid;grid-template-columns:240px 1fr;min-height:100%}
+.side{background:var(--surface);border-right:1px solid var(--line);padding:18px 12px;display:flex;flex-direction:column;gap:18px;position:sticky;top:env(safe-area-inset-top,0px);height:100vh}
+.brand{display:flex;align-items:center;gap:10px;padding:4px 8px}
+.brand-mark{width:30px;height:30px;border-radius:7px;background:var(--accent);color:var(--on-accent);display:grid;place-items:center}
+.brand-mark svg{width:18px;height:18px}
+.brand b{font-size:14px;display:block;line-height:1.2}
+.brand span{font-size:11.5px;color:var(--muted)}
+.nav{display:flex;flex-direction:column;gap:2px}
+.nav-label{font-size:11px;letter-spacing:.06em;color:var(--faint);padding:0 10px 6px;text-transform:uppercase}
+.nav button{display:flex;align-items:center;gap:10px;border:0;background:none;padding:9px 10px;border-radius:6px;cursor:pointer;text-align:left;color:var(--muted);font-weight:500}
+.nav button:hover{background:var(--surface-2);color:var(--text)}
+.nav button[aria-current="page"]{background:var(--accent-soft);color:var(--accent)}
+.nav .badge{margin-left:auto}
+.side-foot{margin-top:auto;font-size:12px;color:var(--muted);padding:10px;border-top:1px solid var(--line);display:flex;flex-direction:column;gap:4px}
+
+.main{min-width:0;display:flex;flex-direction:column}
+.top{position:sticky;top:env(safe-area-inset-top,0px);z-index:5;background:color-mix(in srgb,var(--bg) 88%,transparent);backdrop-filter:blur(8px);border-bottom:1px solid var(--line);padding:12px 28px;display:flex;align-items:center;gap:16px;flex-wrap:wrap}
+.top h1{font-size:18px;margin:0;font-weight:700;letter-spacing:-.01em}
+.crumbs{display:flex;gap:8px;flex-wrap:wrap;margin-left:auto}
+.crumb{display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--muted);background:var(--surface);border:1px solid var(--line);padding:4px 10px;border-radius:999px;max-width:100%}
+.crumb b{color:var(--text);font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.content{padding:24px 28px 48px;display:flex;flex-direction:column;gap:20px;max-width:1280px;width:100%}
+
+/* primitives */
+.card{background:var(--surface);border:1px solid var(--line);border-radius:8px}
+.card-h{display:flex;align-items:center;gap:10px;padding:14px 18px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+.card-h h2{font-size:14.5px;margin:0;font-weight:600}
+.card-h .sub{font-size:12.5px;color:var(--muted)}
+.card-h .act{margin-left:auto;display:flex;gap:8px;flex-wrap:wrap}
+.card-b{padding:18px}
+.btn{display:inline-flex;align-items:center;gap:7px;border:1px solid var(--line-strong);background:var(--surface);padding:7px 13px;border-radius:6px;cursor:pointer;font-weight:500;font-size:13px;white-space:nowrap}
+.btn:hover{background:var(--surface-2)}
+.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}
+.btn.primary:hover{filter:brightness(1.07)}
+.btn.ghost{border-color:transparent;background:none;color:var(--muted)}
+.btn.ghost:hover{background:var(--surface-2);color:var(--text)}
+.btn:disabled{opacity:.45;cursor:not-allowed;filter:none}
+.btn:focus-visible,.nav button:focus-visible,input:focus-visible,select:focus-visible,tr[tabindex]:focus-visible,.tree button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.badge{display:inline-flex;align-items:center;gap:5px;font-size:11.5px;font-weight:600;padding:2px 8px;border-radius:999px;white-space:nowrap}
+.badge::before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor}
+.b-ok{color:var(--ok);background:var(--ok-soft)} .b-warn{color:var(--warn);background:var(--warn-soft)}
+.b-bad{color:var(--bad);background:var(--bad-soft)} .b-idle{color:var(--idle);background:var(--idle-soft)}
+.b-info{color:var(--accent);background:var(--accent-soft)}
+.chip{display:inline-block;font-size:12px;padding:1px 8px;border-radius:4px;background:var(--surface-2);border:1px solid var(--line);white-space:nowrap}
+.field{display:flex;flex-direction:column;gap:6px;min-width:0}
+.field label,.flabel{font-size:12.5px;font-weight:600;color:var(--muted)}
+.input,select.input{border:1px solid var(--line-strong);background:var(--surface);border-radius:6px;padding:7px 10px;min-width:0;width:100%}
+.hint{font-size:12px;color:var(--faint)}
+.err{font-size:12px;color:var(--bad)}
+.row{display:flex;gap:12px;flex-wrap:wrap;align-items:center}
+.grid2{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px}
+.grid3{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px}
+.tbl-wrap{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:13px}
+th{text-align:left;font-weight:600;color:var(--muted);font-size:12px;padding:9px 14px;border-bottom:1px solid var(--line);background:var(--surface-2);white-space:nowrap}
+td{padding:10px 14px;border-bottom:1px solid var(--line);vertical-align:middle}
+tr:last-child td{border-bottom:0}
+tbody tr.click{cursor:pointer}
+tbody tr.click:hover td{background:var(--surface-2)}
+td.r,th.r{text-align:right}
+.empty{padding:36px 18px;text-align:center;color:var(--muted);display:flex;flex-direction:column;align-items:center;gap:8px}
+.empty svg{width:28px;height:28px;color:var(--faint)}
+.banner{display:flex;gap:10px;align-items:flex-start;padding:12px 14px;border-radius:8px;font-size:13px;border:1px solid}
+.banner.warn{background:var(--warn-soft);border-color:color-mix(in srgb,var(--warn) 30%,transparent);color:var(--text)}
+.banner.warn svg{color:var(--warn)}
+.banner.bad{background:var(--bad-soft);border-color:color-mix(in srgb,var(--bad) 30%,transparent)}
+.banner.bad svg{color:var(--bad)}
+.skel{background:linear-gradient(90deg,var(--surface-2),var(--line),var(--surface-2));background-size:200% 100%;animation:sh 1.2s infinite;border-radius:4px;height:12px}
+@keyframes sh{to{background-position:-200% 0}}
+
+/* dashboard */
+.conn{padding:16px 18px;display:flex;flex-direction:column;gap:10px}
+.conn-top{display:flex;align-items:center;gap:10px}
+.conn-ico{width:34px;height:34px;border-radius:7px;display:grid;place-items:center;background:var(--surface-2);border:1px solid var(--line)}
+.conn-ico svg{width:18px;height:18px}
+.conn-top b{font-size:13.5px}
+.conn-top .badge{margin-left:auto}
+.conn p{margin:0;font-size:12.5px;color:var(--muted);overflow-wrap:anywhere}
+.conn.is-bad{border-color:color-mix(in srgb,var(--bad) 45%,var(--line))}
+.stats{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));border-top:1px solid var(--line)}
+.stat{padding:14px 18px;border-right:1px solid var(--line)}
+.stat:last-child{border-right:0}
+.stat .k{font-size:12px;color:var(--muted);display:flex;align-items:center;gap:6px}
+.stat .k i{width:8px;height:8px;border-radius:2px;display:inline-block}
+.stat .v{font-size:24px;font-weight:700;letter-spacing:-.02em}
+.progress{height:6px;background:var(--surface-2);border-radius:999px;overflow:hidden}
+.progress>div{height:100%;width:0;background:var(--accent);transition:width .2s linear}
+.legend{display:flex;gap:14px;font-size:12px;color:var(--muted);flex-wrap:wrap}
+.legend span{display:flex;align-items:center;gap:6px}
+.legend i{width:10px;height:10px;border-radius:2px;display:inline-block}
+.chart text{fill:var(--muted);font-size:11px;font-family:var(--sans)}
+.chart .grid{stroke:var(--line);stroke-width:1}
+
+/* stepper */
+.stepper{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:0;counter-reset:s}
+.step{display:flex;align-items:center;gap:10px;padding:14px 16px;border-right:1px solid var(--line);min-width:0}
+.step:last-child{border-right:0}
+.step .dot{width:26px;height:26px;border-radius:50%;display:grid;place-items:center;font-size:12px;font-weight:700;border:1.5px solid var(--line-strong);color:var(--muted);flex:none;background:var(--surface)}
+.step.done .dot{background:var(--ok);border-color:var(--ok);color:var(--surface)}
+.step.cur .dot{border-color:var(--accent);color:var(--accent)}
+.step b{font-size:13px;display:block}
+.step span{font-size:11.5px;color:var(--muted);display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.tree{border:1px solid var(--line);border-radius:6px;padding:6px;max-height:260px;overflow:auto;background:var(--surface)}
+.tree button{display:flex;align-items:center;gap:8px;width:100%;border:0;background:none;padding:6px 8px;border-radius:5px;cursor:pointer;text-align:left;font-size:13px}
+.tree button:hover{background:var(--surface-2)}
+.tree button.sel{background:var(--accent-soft);color:var(--accent);font-weight:600}
+.tree .lvl1{padding-left:26px}
+.tree .lvl2{padding-left:44px}
+.tabs-pick{display:flex;gap:6px;flex-wrap:wrap}
+.tabs-pick button{border:1px solid var(--line-strong);background:var(--surface);border-radius:999px;padding:4px 12px;font-size:12.5px;cursor:pointer}
+.tabs-pick button[aria-pressed="true"]{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}
+.acct{display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--line);border-radius:6px;background:var(--surface-2)}
+.avatar{width:28px;height:28px;border-radius:50%;background:var(--accent);color:var(--on-accent);display:grid;place-items:center;font-size:12px;font-weight:700}
+
+/* mapping */
+.map-row td{padding:8px 14px}
+.map-row .arrow{color:var(--faint);text-align:center;width:36px}
+.map-row select,.map-row input{padding:6px 8px;font-size:13px}
+.col-name{display:flex;align-items:center;gap:8px}
+.col-name .kind{font-size:11px;color:var(--faint);font-family:var(--mono)}
+.warn-ico{color:var(--warn);display:inline-flex;align-items:center;gap:4px;font-size:12px}
+.key-radio{display:flex;align-items:center;justify-content:center}
+input[type=radio],input[type=checkbox]{accent-color:var(--accent);width:16px;height:16px}
+
+/* rules */
+.opt{display:flex;gap:10px;align-items:flex-start;padding:12px 14px;border:1px solid var(--line);border-radius:6px;cursor:pointer}
+.opt:has(input:checked){border-color:var(--accent);background:var(--accent-soft)}
+.opt b{font-size:13.5px;display:block}
+.opt span{font-size:12.5px;color:var(--muted)}
+.opts{display:flex;flex-direction:column;gap:8px}
+.cond{display:grid;grid-template-columns:1fr 110px 1fr 34px;gap:8px;align-items:center}
+
+/* drawer / modal / toast */
+.scrim{position:fixed;inset:0;background:rgba(10,14,22,.45);z-index:40}
+.drawer{position:fixed;top:0;right:0;bottom:0;width:min(520px,100%);background:var(--surface);z-index:41;box-shadow:var(--shadow);display:flex;flex-direction:column;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+.drawer-h{padding:16px 18px;border-bottom:1px solid var(--line);display:flex;gap:10px;align-items:center}
+.drawer-h h3{margin:0;font-size:15px}
+.drawer-b{padding:16px 18px;overflow:auto;display:flex;flex-direction:column;gap:14px}
+.kv{display:grid;grid-template-columns:110px 1fr;gap:6px 12px;font-size:13px}
+.kv dt{color:var(--muted)} .kv dd{margin:0}
+.modal{position:fixed;z-index:41;left:50%;top:50%;transform:translate(-50%,-50%);width:min(420px,calc(100% - 32px));background:var(--surface);border-radius:10px;box-shadow:var(--shadow);padding:22px;display:flex;flex-direction:column;gap:14px}
+.modal h3{margin:0;font-size:16px}
+.modal p{margin:0;color:var(--muted);font-size:13px}
+.scope{border:1px solid var(--line);border-radius:6px;padding:10px 12px;font-size:12.5px;display:flex;flex-direction:column;gap:6px}
+.scope div{display:flex;gap:8px;align-items:center}
+.toasts{position:fixed;right:20px;bottom:calc(20px + env(safe-area-inset-bottom,0px));z-index:60;display:flex;flex-direction:column;gap:8px;max-width:calc(100% - 40px)}
+.toast{background:var(--text);color:var(--bg);padding:10px 14px;border-radius:8px;box-shadow:var(--shadow);font-size:13px;display:flex;gap:8px;align-items:center;animation:up .2s ease}
+@keyframes up{from{transform:translateY(8px);opacity:0}}
+
+/* kanban */
+.seg{display:inline-flex;border:1px solid var(--line-strong);border-radius:6px;overflow:hidden}
+.seg button{border:0;background:var(--surface);padding:6px 12px;font-size:12.5px;cursor:pointer;display:flex;align-items:center;gap:6px}
+.seg button[aria-pressed="true"]{background:var(--accent-soft);color:var(--accent);font-weight:600}
+.kanban{display:grid;grid-template-columns:repeat(5,minmax(200px,1fr));gap:12px;overflow-x:auto;padding:18px}
+.kcol{background:var(--surface-2);border-radius:8px;padding:10px;display:flex;flex-direction:column;gap:8px;min-height:160px}
+.kcol-h{display:flex;align-items:center;gap:8px;font-size:12.5px;font-weight:600;padding:2px 4px}
+.kcol-h .cnt{color:var(--faint);font-weight:500}
+.kcard{background:var(--surface);border:1px solid var(--line);border-radius:6px;padding:10px 12px;display:flex;flex-direction:column;gap:6px;font-size:12.5px}
+.kcard b{font-size:13px;line-height:1.35}
+.kcard .meta{display:flex;gap:6px;flex-wrap:wrap;color:var(--muted);align-items:center}
+.kcard .open{margin-left:auto;border:0;background:none;color:var(--faint);cursor:pointer;padding:2px;border-radius:4px}
+.kcard .open:hover{color:var(--accent)}
+.kempty{font-size:12px;color:var(--faint);text-align:center;padding:18px 6px;border:1px dashed var(--line-strong);border-radius:6px}
+.sample{font-size:11px;font-weight:600;color:var(--warn);background:var(--warn-soft);padding:2px 8px;border-radius:4px}
+
+@media (max-width:1024px){
+  .grid3{grid-template-columns:1fr}
+  .grid2{grid-template-columns:1fr}
+  .stats{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .stat:nth-child(2){border-right:0}
+  .stat:nth-child(-n+2){border-bottom:1px solid var(--line)}
+  .stepper{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .step:nth-child(2){border-right:0}
+  .step:nth-child(-n+2){border-bottom:1px solid var(--line)}
+}
+@media (max-width:860px){
+  .app{grid-template-columns:1fr}
+  .side{position:static;height:auto;flex-direction:row;align-items:center;padding:10px 16px;border-right:0;border-bottom:1px solid var(--line);overflow-x:auto;gap:12px}
+  .brand span,.nav-label,.side-foot{display:none}
+  .nav{flex-direction:row}
+  .nav button{white-space:nowrap;padding:7px 10px}
+  .nav .badge{display:none}
+  .top,.content{padding-left:16px;padding-right:16px}
+  .crumbs{margin-left:0}
+  .cond{grid-template-columns:1fr 1fr;}
+}
+@media (prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
+</style>
+<style>
+.meta-row td{background:var(--surface-2);color:var(--muted)}
+.impl{font-size:12px;color:var(--muted)}
+.struct{display:flex;flex-direction:column}
+.struct-item{display:grid;grid-template-columns:28px 180px 1fr auto;gap:12px;align-items:center;padding:12px 18px;border-bottom:1px solid var(--line)}
+.struct-item:last-child{border-bottom:0}
+.struct-item .tabname{font-family:var(--mono);font-size:13px;font-weight:500}
+.struct-item .d{font-size:12.5px;color:var(--muted)}
+.flow{display:flex;align-items:center;gap:0;overflow-x:auto;padding:18px}
+.flow-node{flex:1 1 0;min-width:170px;border:1px solid var(--line);border-radius:8px;padding:12px 14px;background:var(--surface);display:flex;flex-direction:column;gap:6px}
+.flow-node .conn-top{gap:8px}
+.flow-node p{margin:0;font-size:12.5px;color:var(--muted);overflow-wrap:anywhere}
+.flow-arrow{flex:none;width:44px;display:grid;place-items:center;color:var(--faint)}
+.flow-node.is-bad{border-color:color-mix(in srgb,var(--bad) 45%,var(--line))}
+.hd-cell{display:flex;flex-direction:column;gap:1px}
+.hd-cell small{font-weight:400;color:var(--faint);font-size:11px}
+@media (max-width:860px){.struct-item{grid-template-columns:24px 1fr;}.struct-item .d,.struct-item .cnt{grid-column:2}}
+</style>
+<style>
+[hidden]{display:none!important}
+body{margin:0}
+.progress.indet>div{width:35%;animation:indet 1.1s ease-in-out infinite}
+@keyframes indet{0%{transform:translateX(-100%)}100%{transform:translateX(300%)}}
+.demo-bar{display:flex;gap:8px;align-items:center;font-size:12.5px;padding:8px 12px;border-radius:8px;background:var(--warn-soft);color:var(--text);border:1px solid color-mix(in srgb,var(--warn) 30%,transparent)}
+.demo-bar svg{color:var(--warn)}
+a.btn{text-decoration:none;color:inherit}
+.panel-err{margin-bottom:16px}
+.search{margin-bottom:8px}
+.tree .folder{font-size:11.5px;color:var(--faint);padding:8px 8px 2px;letter-spacing:.02em}
+.tree .meta{margin-left:auto;font-size:11px;color:var(--faint);font-weight:400}
+</style>
+</head>
+<body>
+
+
+<div class="app">
+  <aside class="side">
+    <div class="brand">
+      <div class="brand-mark"><svg class="i" viewBox="0 0 24 24"><ellipse cx="12" cy="6" rx="7" ry="3"/><path d="M5 6v6c0 1.7 3.1 3 7 3s7-1.3 7-3V6"/><path d="M5 12v6c0 1.7 3.1 3 7 3s7-1.3 7-3v-6"/></svg></div>
+      <div><b>Sheet DB</b><span>원본시트 → Drive DB</span></div>
+    </div>
+    <nav class="nav" aria-label="주 메뉴">
+      <div class="nav-label">운영</div>
+      <button data-view="dash" aria-current="page"><svg class="i" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="9" rx="1"/><rect x="14" y="3" width="7" height="5" rx="1"/><rect x="14" y="12" width="7" height="9" rx="1"/><rect x="3" y="16" width="7" height="5" rx="1"/></svg>대시보드</button>
+      <button data-view="db"><svg class="i" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 10h18M9 10v10"/></svg>DB 뷰</button>
+      <button data-view="history"><svg class="i" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5M12 7v5l3 2"/></svg>실행 이력<span class="badge b-bad" id="navFail" hidden></span></button>
+      <div class="nav-label" style="margin-top:12px">설정</div>
+      <button data-view="connect"><svg class="i" viewBox="0 0 24 24"><path d="M3 6a1 1 0 0 1 1-1h5l2 2h9a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z"/></svg>원본 · 저장 위치</button>
+      <button data-view="schema"><svg class="i" viewBox="0 0 24 24"><path d="M4 6h6M4 12h6M4 18h6M14 6h6M14 12h6M14 18h6"/></svg>DB 속성 설계<span class="badge b-warn" id="navMap" hidden></span></button>
+      <button data-view="rules"><svg class="i" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M12 2v3M12 19v3M4.2 4.2l2.1 2.1M17.7 17.7l2.1 2.1M2 12h3M19 12h3M4.2 19.8l2.1-2.1M17.7 6.3l2.1-2.1"/></svg>자동화 규칙</button>
+    </nav>
+    <div class="side-foot">
+      <span>실행 계정</span>
+      <b style="color:var(--text);font-weight:500;overflow-wrap:anywhere" id="footAcct">확인 중</b>
+      <span class="sample" id="demoTag" style="align-self:flex-start;margin-top:4px" hidden>데모 모드</span>
+    </div>
+  </aside>
+
+  <div class="main">
+    <header class="top">
+      <h1 id="pageTitle">대시보드</h1>
+      <div class="crumbs">
+        <span class="crumb"><svg class="i" viewBox="0 0 24 24"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M4 9h16M4 15h16M10 3v18"/></svg><span>원본</span><b id="crumbSrc">—</b></span>
+        <span class="crumb"><svg class="i" viewBox="0 0 24 24"><ellipse cx="12" cy="6" rx="7" ry="3"/><path d="M5 6v12c0 1.7 3.1 3 7 3s7-1.3 7-3V6"/></svg><span>DB</span><b id="crumbDb">—</b></span>
+      </div>
+    </header>
+
+    <main class="content">
+      <div class="demo-bar" id="demoBar" hidden><svg class="i" viewBox="0 0 24 24"><path d="M12 3l10 18H2z"/><path d="M12 10v4M12 17.5v.5"/></svg><span>Apps Script 밖에서 열려 예시 데이터로 동작하는 데모 모드임. 웹앱으로 배포하면 실제 Drive 파일을 읽고 씀.</span></div>
+
+      <!-- 대시보드 -->
+      <section data-panel="dash">
+        <div id="dashErr"></div>
+        <div class="card">
+          <div class="card-h"><h2>변환 파이프라인</h2><span class="sub">Google Drive 안에서만 처리함 · 외부 서비스 연동 없음</span></div>
+          <div class="flow" id="flow"></div>
+        </div>
+        <div class="card" style="margin-top:20px">
+          <div class="card-h">
+            <h2>최근 실행 결과</h2><span class="sub" id="lastRunMeta"></span>
+            <div class="act"><button class="btn primary" id="btnSyncNow"><svg class="i" viewBox="0 0 24 24"><path d="M20 12a8 8 0 0 1-14.3 4.9M4 12a8 8 0 0 1 14.3-4.9"/><path d="M18 3v4h-4M6 21v-4h4"/></svg>지금 DB 갱신</button></div>
+          </div>
+          <div id="syncProg" class="card-b" hidden>
+            <div class="row" style="justify-content:space-between;margin-bottom:8px"><span style="font-size:13px">원본을 읽고 DB에 반영하는 중</span><span class="hint">행 수에 따라 수십 초 걸릴 수 있음</span></div>
+            <div class="progress indet"><div></div></div>
+          </div>
+          <div class="stats" id="lastStats"></div>
+        </div>
+        <div class="card" style="margin-top:20px">
+          <div class="card-h">
+            <h2>최근 7일 DB 반영 건수</h2>
+            <div class="act legend">
+              <span><i style="background:var(--accent)"></i>추가</span><span><i style="background:var(--accent-mid)"></i>갱신</span>
+              <span><i style="background:var(--warn)"></i>보관</span><span><i style="background:var(--bad)"></i>실패</span>
+            </div>
+          </div>
+          <div class="card-b" id="chartBox"></div>
+        </div>
+      </section>
+
+      <!-- 원본 · 저장 위치 -->
+      <section data-panel="connect" hidden>
+        <div id="connErr"></div>
+        <div class="card"><div class="stepper" id="stepper"></div></div>
+        <div class="grid2">
+          <div class="card">
+            <div class="card-h"><h2>1. 실행 계정</h2></div>
+            <div class="card-b" id="acctBox"></div>
+          </div>
+          <div class="card">
+            <div class="card-h"><h2>2. 원본 스프레드시트</h2><span class="sub">사람이 편집하는 시트 · 읽기만 함</span></div>
+            <div class="card-b">
+              <input class="input search" id="sheetQ" type="search" placeholder="파일명 검색" aria-label="스프레드시트 검색">
+              <div class="tree" id="tree"></div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-h"><h2>3. 시트 탭 · 헤더 행</h2></div>
+            <div class="card-b" style="display:flex;flex-direction:column;gap:16px">
+              <div class="field"><span class="flabel">시트 탭</span><div class="tabs-pick" id="tabPick"></div></div>
+              <div class="field" style="max-width:220px">
+                <label for="headerRow">헤더 행 번호</label>
+                <input class="input num" id="headerRow" type="number" min="1" max="50" value="1">
+                <span class="hint" id="headerHint"></span>
+              </div>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-h"><h2>4. DB 저장 위치</h2><span class="sub">Drive 안에 DB 스프레드시트를 둠</span></div>
+            <div class="card-b" style="display:flex;flex-direction:column;gap:14px">
+              <div class="opts">
+                <label class="opt"><input type="radio" name="dbmode" id="dbNew" value="new" checked><div><b>새 DB 스프레드시트 생성</b><span>첫 실행 때 속성 설계대로 탭·서식·드롭다운을 만듦</span></div></label>
+                <label class="opt"><input type="radio" name="dbmode" id="dbExist" value="exist"><div><b>기존 DB 파일 사용</b><span>이전에 만든 DB 파일에 이어서 반영함</span></div></label>
+              </div>
+              <div id="dbNewFields" style="display:flex;flex-direction:column;gap:14px">
+                <div class="field"><label for="dbName">DB 파일명</label><input class="input" id="dbName" type="text"><span class="err" id="dbNameErr" hidden>DB 파일명을 입력함</span></div>
+                <div class="field"><label for="dbFolder">저장 폴더</label><select class="input" id="dbFolder"></select><span class="hint">원본시트와 다른 폴더를 권장함. 공유 범위는 폴더 설정을 따름</span></div>
+              </div>
+              <div class="field" id="dbExistField" hidden><label for="dbExisting">기존 DB 파일</label><select class="input" id="dbExisting"></select></div>
+            </div>
+          </div>
+        </div>
+        <div class="row" style="justify-content:flex-end"><button class="btn primary" id="btnSaveConn">설정 저장</button></div>
+      </section>
+
+      <!-- DB 속성 설계 -->
+      <section data-panel="schema" hidden>
+        <div id="schemaErr"></div>
+        <div class="banner warn" id="mapBanner" hidden><svg class="i" viewBox="0 0 24 24"><path d="M12 3l10 18H2z"/><path d="M12 10v4M12 17.5v.5"/></svg><div id="mapBannerText"></div></div>
+        <div class="card">
+          <div class="card-h">
+            <h2>원본 컬럼 → DB 속성</h2><span class="sub" id="mapCount"></span>
+            <div class="act">
+              <button class="btn" id="btnAutoMap"><svg class="i" viewBox="0 0 24 24"><path d="M12 3l1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8z"/></svg>유형 자동 추천</button>
+              <button class="btn primary" id="btnSaveMap">속성 저장</button>
+            </div>
+          </div>
+          <div class="tbl-wrap">
+            <table><thead><tr><th>원본 컬럼</th><th></th><th>DB 속성명</th><th>속성 유형</th><th>시트 구현</th><th style="text-align:center">고유 키</th><th>검사</th></tr></thead>
+            <tbody id="mapBody"></tbody></table>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-h"><h2>생성될 DB 시트 미리보기</h2><span class="sub" id="dbTabName"></span></div>
+          <div class="tbl-wrap" id="mapPreview"></div>
+        </div>
+      </section>
+
+      <!-- 자동화 규칙 -->
+      <section data-panel="rules" hidden>
+        <div id="rulesErr"></div>
+        <div class="grid2">
+          <div class="card">
+            <div class="card-h"><h2>실행 방식</h2><span class="sub" id="trigState"></span></div>
+            <div class="card-b opts">
+              <label class="opt"><input type="radio" name="trig" id="trigManual" value="manual"><div><b>수동 실행</b><span>대시보드의 "지금 DB 갱신"으로만 실행함</span></div></label>
+              <label class="opt"><input type="radio" name="trig" id="trigEdit" value="edit"><div><b>원본 편집 감지</b><span>원본 편집 1분 뒤 한 번 실행함 (연속 편집은 묶어서 처리)</span></div></label>
+              <label class="opt"><input type="radio" name="trig" id="trigCron" value="cron"><div style="flex:1"><b>시간 기반 실행</b><span>정해진 간격으로 변경된 행만 반영함</span>
+                <div class="row" style="margin-top:10px">
+                  <select class="input" id="cronEvery" style="max-width:160px"><option value="15m">15분마다</option><option value="1h">1시간마다</option><option value="daily">매일 지정 시각</option></select>
+                  <input class="input num" id="cronTime" type="time" value="08:50" style="max-width:130px" hidden>
+                </div></div></label>
+            </div>
+          </div>
+          <div class="card">
+            <div class="card-h"><h2>충돌 · 삭제 처리</h2></div>
+            <div class="card-b" style="display:flex;flex-direction:column;gap:16px">
+              <div class="field">
+                <span class="flabel">DB 시트에서 값을 직접 고친 경우</span>
+                <div class="opts">
+                  <label class="opt"><input type="radio" name="conflict" id="confSrc" value="src"><div><b>원본 우선</b><span>다음 갱신 때 원본 값으로 덮어씀. DB는 조회 전용으로 운영함</span></div></label>
+                  <label class="opt"><input type="radio" name="conflict" id="confKeep" value="keep"><div><b>DB 수정분 보존</b><span>DB에서 고친 행은 건너뛰고 _log_detail 탭에 기록함</span></div></label>
+                </div>
+              </div>
+              <div class="field">
+                <label for="delPolicy">원본에서 행이 삭제된 경우</label>
+                <select class="input" id="delPolicy">
+                  <option value="archive">_archive 탭으로 이동</option>
+                  <option value="status">진행상태를 "원본 삭제"로 변경</option>
+                  <option value="ignore">DB에 그대로 둠</option>
+                </select>
+                <span class="hint">"진행상태 변경"은 DB에 진행상태 속성이 있을 때만 동작함</span>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="card">
+          <div class="card-h"><h2>DB에 넣을 행 조건</h2><span class="sub">모든 조건을 만족하는 행만 넣고, 벗어난 기존 레코드는 _archive로 옮김</span>
+            <div class="act"><button class="btn" id="btnAddCond"><svg class="i" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>조건 추가</button></div></div>
+          <div class="card-b" id="condList" style="display:flex;flex-direction:column;gap:8px"></div>
+        </div>
+        <div class="card">
+          <div class="card-h"><h2>실패 알림</h2></div>
+          <div class="card-b grid2">
+            <div class="field"><label for="notiMail">이메일 수신자</label><input class="input" id="notiMail" type="email" placeholder="비워두면 메일을 보내지 않음"><span class="hint">실패 또는 부분 실패 시 MailApp으로 발송함</span></div>
+            <div class="field"><label for="notiTeams">Teams 웹훅 URL (선택)</label><input class="input mono" id="notiTeams" type="url" placeholder="https://…webhook.office.com/…"><span class="hint">비워두면 Teams 알림을 보내지 않음</span></div>
+          </div>
+        </div>
+        <div class="row" style="justify-content:flex-end"><button class="btn primary" id="btnSaveRules">규칙 저장 · 트리거 설치</button></div>
+      </section>
+
+      <!-- 실행 이력 -->
+      <section data-panel="history" hidden>
+        <div id="histErr"></div>
+        <div class="card">
+          <div class="card-h">
+            <h2>실행 이력</h2><span class="sub">DB 파일의 _log 탭 기준</span>
+            <div class="act">
+              <select class="input" id="fPeriod" style="width:auto" aria-label="기간"><option value="7">최근 7일</option><option value="1">오늘</option><option value="30">최근 30일</option></select>
+              <select class="input" id="fStatus" style="width:auto" aria-label="상태"><option value="all">전체 상태</option><option value="ok">성공</option><option value="warn">부분 실패</option><option value="bad">실패</option></select>
+              <button class="btn" id="btnCsv"><svg class="i" viewBox="0 0 24 24"><rect x="8" y="8" width="12" height="12" rx="2"/><path d="M16 8V5a1 1 0 0 0-1-1H5a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h3"/></svg>CSV 복사</button>
+            </div>
+          </div>
+          <div class="tbl-wrap" id="histBox"></div>
+        </div>
+      </section>
+
+      <!-- DB 뷰 -->
+      <section data-panel="db" hidden>
+        <div id="dbErr"></div>
+        <div class="card">
+          <div class="card-h">
+            <h2 id="dbTitle">DB</h2><span class="sub" id="pvCount"></span>
+            <div class="act">
+              <a class="btn" id="dbOpen" href="#" target="_blank" rel="noopener" hidden><svg class="i" viewBox="0 0 24 24"><path d="M14 4h6v6M20 4l-9 9"/><path d="M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></svg>시트에서 열기</a>
+              <select class="input" id="pvSort" style="width:auto" aria-label="정렬"></select>
+              <select class="input" id="pvGroup" style="width:auto" aria-label="보드 그룹 기준" hidden></select>
+              <div class="seg" role="group" aria-label="보기 전환">
+                <button data-pv="table" aria-pressed="true"><svg class="i" viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 10h18M3 15h18"/></svg>테이블</button>
+                <button data-pv="board" aria-pressed="false"><svg class="i" viewBox="0 0 24 24"><rect x="3" y="4" width="5" height="16" rx="1"/><rect x="10" y="4" width="5" height="10" rx="1"/><rect x="17" y="4" width="4" height="13" rx="1"/></svg>보드</button>
+                <button data-pv="struct" aria-pressed="false"><svg class="i" viewBox="0 0 24 24"><path d="M4 5h16M4 12h16M4 19h16"/></svg>파일 구조</button>
+              </div>
+            </div>
+          </div>
+          <div id="pvBox"></div>
+        </div>
+      </section>
+    </main>
+  </div>
+</div>
+
+<div id="overlay"></div>
+<div class="toasts" id="toasts" aria-live="polite"></div>
+
+<script>
+/* =====================================================================
+ * 서버 호출 계층: Apps Script 웹앱이면 google.script.run, 아니면 DEMO
+ * ===================================================================== */
+const IS_GAS = typeof google !== 'undefined' && google.script && google.script.run;
+function api(fn, ...args){
+  if(!IS_GAS) return new Promise((res, rej) => setTimeout(() => { try{ res(JSON.parse(JSON.stringify(DEMO[fn](...args)))) }catch(e){ rej(e) } }, 250));
+  return new Promise((res, rej) => google.script.run.withSuccessHandler(res).withFailureHandler(e => rej(e))[fn](...args));
+}
+const errMsg = e => (e && (e.message || e.toString())) || '알 수 없는 오류';
+
+/* 속성 유형 (Code.gs TYPES와 동일) */
+const PROP_TYPES = {
+  '제목':'1열 고정 · 굵게 · 틀 고정', '텍스트':'일반 셀', '숫자':'숫자 서식 #,##0', '선택':'데이터 확인 드롭다운 (값 자동 수집)',
+  '다중 선택':'쉼표 구분 · 드롭다운 목록', '날짜':'날짜 서식 yyyy-mm-dd', '사람':'_people 탭 참조 드롭다운', '체크박스':'체크박스', 'URL':'일반 셀 (링크 자동 인식)',
+};
+const COMPAT = { text:['제목','텍스트','선택','URL'], select:['선택','다중 선택','텍스트'], date:['날짜','텍스트'], number:['숫자','텍스트'], person:['사람','텍스트','선택'], bool:['체크박스','텍스트'] };
+const META_COLS = [
+  { name:'_row_key', desc:'고유 키 복사본' }, { name:'_src_row', desc:'원본 행 번호' },
+  { name:'_synced_at', desc:'마지막 반영 시각' }, { name:'_hash', desc:'DB 직접 수정 감지용 · 숨김' },
+];
+const OPS = ['=','≠','포함','비어 있음','이후','이전'];
+
+/* ===================================================================== 상태 */
+const state = {
+  view:'dash', dash:null, cfg:null, account:'',
+  sheets:null, folders:null, tabs:[], form:null,
+  cols:null, schema:null, keyCol:'', conds:[],
+  runs:null, dbv:null, pv:'table', busy:false,
+};
+const $ = s => document.querySelector(s);
+const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const fmtNum = n => Number(n).toLocaleString('ko-KR');
+const ICON = {
+  sheet:'<svg class="i" viewBox="0 0 24 24"><rect x="4" y="3" width="16" height="18" rx="2"/><path d="M4 9h16M4 15h16M10 3v18"/></svg>',
+  script:'<svg class="i" viewBox="0 0 24 24"><path d="M8 8l-4 4 4 4M16 8l4 4-4 4M13 5l-2 14"/></svg>',
+  db:'<svg class="i" viewBox="0 0 24 24"><ellipse cx="12" cy="6" rx="7" ry="3"/><path d="M5 6v12c0 1.7 3.1 3 7 3s7-1.3 7-3V6"/><path d="M5 12c0 1.7 3.1 3 7 3s7-1.3 7-3"/></svg>',
+  folder:'<svg class="i" viewBox="0 0 24 24"><path d="M3 6a1 1 0 0 1 1-1h5l2 2h9a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1z"/></svg>',
+  drive:'<svg class="i" viewBox="0 0 24 24"><path d="M8 3h8l6 11-4 7H6l-4-7z"/><path d="M8 3l6 11H2M16 3l-8 14M22 14H10"/></svg>',
+  warn:'<svg class="i" viewBox="0 0 24 24"><path d="M12 3l10 18H2z"/><path d="M12 10v4M12 17.5v.5"/></svg>',
+  ok:'<svg class="i" viewBox="0 0 24 24"><path d="M5 12l5 5 9-10"/></svg>',
+  x:'<svg class="i" viewBox="0 0 24 24"><path d="M6 6l12 12M18 6L6 18"/></svg>',
+  arrow:'<svg class="i" viewBox="0 0 24 24" style="width:22px;height:22px"><path d="M4 12h15M14 7l5 5-5 5"/></svg>',
+  ext:'<svg class="i" viewBox="0 0 24 24"><path d="M14 4h6v6M20 4l-9 9"/><path d="M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></svg>',
+  inbox:'<svg class="i" viewBox="0 0 24 24"><path d="M3 13l3-8h12l3 8v6H3z"/><path d="M3 13h5l1 2h6l1-2h5"/></svg>',
+};
+function toast(msg, kind){
+  const t = document.createElement('div'); t.className = 'toast';
+  t.innerHTML = (kind==='bad'?ICON.warn:ICON.ok) + '<span>'+esc(msg)+'</span>';
+  $('#toasts').appendChild(t); setTimeout(() => t.remove(), kind==='bad'?5000:2800);
+}
+const showErr = (sel, e) => { $(sel).innerHTML = e ? `<div class="banner bad panel-err">${ICON.warn}<div>${esc(errMsg(e))}</div></div>` : ''; };
+const skelRows = n => `<div class="card-b" style="display:flex;flex-direction:column;gap:12px">${Array.from({length:n},(_,i)=>`<div class="skel" style="width:${90-i*12}%"></div>`).join('')}</div>`;
+const statusKey = s => s==='성공'?'ok': s==='부분 실패'?'warn': s==='실패'?'bad':'idle';
+const trigText = r => r.trigger==='manual'?'수동 실행': r.trigger==='edit'?'원본 편집 감지':'시간 기반 · '+({'15m':'15분마다','1h':'1시간마다'}[r.every] || '매일 '+r.dailyTime);
+
+/* ===================================================================== 내비게이션 */
+const TITLES = { dash:'대시보드', db:'DB 뷰', history:'실행 이력', connect:'원본 · 저장 위치', schema:'DB 속성 설계', rules:'자동화 규칙' };
+const LOADERS = { dash:loadDash, db:loadDb, history:loadHistory, connect:loadConnect, schema:loadSchema, rules:loadRules };
+function go(v){
+  state.view = v;
+  document.querySelectorAll('[data-panel]').forEach(p => p.hidden = p.dataset.panel !== v);
+  document.querySelectorAll('.nav button').forEach(b => b.dataset.view===v ? b.setAttribute('aria-current','page') : b.removeAttribute('aria-current'));
+  $('#pageTitle').textContent = TITLES[v];
+  try{ localStorage.setItem('sdb_view', v) }catch(e){}
+  LOADERS[v]();
+}
+document.querySelectorAll('.nav button').forEach(b => b.onclick = () => go(b.dataset.view));
+
+function renderChrome(){
+  const c = state.cfg || {};
+  const d = state.dash || {};
+  $('#footAcct').textContent = state.account || '—';
+  $('#crumbSrc').textContent = d.source && d.source.ok ? `${d.source.name} › ${d.source.tab}` : c.sourceTab ? c.sourceTab : '미설정';
+  $('#crumbDb').textContent = d.db && d.db.ok ? d.db.name : (c.dbName || '미설정');
+  const fails = (d.runs||[]).filter(r => r.days===0 && r.status!=='성공').length;
+  $('#navFail').textContent = fails; $('#navFail').hidden = !fails;
+}
+
+/* ===================================================================== 1. 대시보드 */
+async function loadDash(){
+  if(!state.dash) renderDash(true);
+  try{
+    const d = await api('api_dashboard');
+    state.dash = d; state.cfg = d.config; state.account = d.account;
+    showErr('#dashErr', null); renderChrome(); renderDash(false);
+  }catch(e){ showErr('#dashErr', e); }
+}
+function renderDash(loading){
+  const d = state.dash || {};
+  const c = state.cfg || { rules:{} };
+  if(loading){
+    $('#flow').innerHTML = [0,1,2].map(i => (i?`<div class="flow-arrow">${ICON.arrow}</div>`:'') + `<div class="flow-node"><div class="conn-top"><div class="conn-ico"></div><div class="skel" style="width:50%"></div></div><div class="skel" style="width:90%"></div><div class="skel" style="width:60%"></div></div>`).join('');
+    $('#lastStats').innerHTML = ['추가','갱신','보관','실패'].map(k=>`<div class="stat"><div class="k">${k}</div><div class="skel" style="width:40px;height:22px;margin-top:6px"></div></div>`).join('');
+    $('#chartBox').innerHTML = '<div class="skel" style="height:160px"></div>';
+    return;
+  }
+  const schemaOk = (c.schema||[]).some(s=>s.on) && c.keyCol;
+  const nodes = [
+    { ico:ICON.sheet, name:'원본시트',
+      st: !d.source ? 'idle' : d.source.ok ? 'ok' : 'bad', txt: !d.source ? '미설정' : d.source.ok ? '읽기 가능' : '읽기 오류',
+      desc: !d.source ? '원본 · 저장 위치에서 원본 시트를 지정함' : d.source.ok ? `${d.source.name} › ${d.source.tab}\n${d.source.cols}개 컬럼 · 데이터 ${fmtNum(d.source.rows)}행` : d.source.error },
+    { ico:ICON.script, name:'변환 스크립트',
+      st: !schemaOk ? 'warn' : d.triggers && !d.triggers.active ? 'warn' : 'ok',
+      txt: !schemaOk ? '속성 설계 필요' : d.triggers && !d.triggers.active ? '트리거 미설치' : '준비됨',
+      desc: `${d.triggers ? d.triggers.text : trigText(c.rules)}\n고유 키: ${c.keyCol || '미지정'}` },
+    { ico:ICON.db, name:'DB 스프레드시트',
+      st: !d.db ? 'idle' : d.db.ok ? 'ok' : 'bad', txt: !d.db ? '생성 대기' : d.db.ok ? '정상' : '열기 오류',
+      desc: !d.db ? `"${c.dbName || '미정'}" 파일은 첫 실행 때 만들어짐` : d.db.ok ? `${d.db.name} › ${d.db.tab}\n레코드 ${fmtNum(d.db.records)}건 · 보관 ${fmtNum(d.db.archived)}건` : d.db.error,
+      link: d.db && d.db.ok ? d.db.url : '' },
+  ];
+  $('#flow').innerHTML = nodes.map((n,i) => (i?`<div class="flow-arrow">${ICON.arrow}</div>`:'') +
+    `<div class="flow-node ${n.st==='bad'?'is-bad':''}"><div class="conn-top"><div class="conn-ico">${n.ico}</div><b>${n.name}</b><span class="badge b-${n.st}">${n.txt}</span></div><p>${esc(n.desc).replace(/\n/g,'<br>')}</p>${n.link?`<a class="btn ghost" style="align-self:flex-start;padding:4px 8px;font-size:12px" href="${esc(n.link)}" target="_blank" rel="noopener">${ICON.ext}시트 열기</a>`:''}</div>`).join('');
+  if(d.lastError) $('#dashErr').innerHTML = `<div class="banner bad panel-err">${ICON.warn}<div>최근 실행 오류: ${esc(d.lastError)}</div></div>`;
+
+  const r = (d.runs||[])[0];
+  $('#lastRunMeta').innerHTML = r ? `${esc(r.start)} · ${esc(r.trig)} · <span class="badge b-${statusKey(r.status)}">${esc(r.status)}</span>` : '실행 기록 없음';
+  const st = [['추가','c','var(--accent)'],['갱신','u','var(--accent-mid)'],['보관','a','var(--warn)'],['실패','f','var(--bad)']];
+  $('#lastStats').innerHTML = st.map(([k,f,col]) => `<div class="stat"><div class="k"><i style="background:${col}"></i>${k}</div><div class="v num" style="${r&&f==='f'&&r[f]?'color:var(--bad)':''}">${r ? r[f] : '–'}</div></div>`).join('');
+  renderChart(d.daily || []);
+}
+function renderChart(D){
+  const tot = x => x.c+x.u+x.a+x.f;
+  if(!D.length || !D.some(tot)){ $('#chartBox').innerHTML = `<div class="empty" style="padding:24px">${ICON.inbox}<span>최근 7일 동안 DB에 반영된 건이 없음</span></div>`; return; }
+  const W=640, H=220, L=34, R=10, T=16, B=28;
+  const top = Math.ceil(Math.max(...D.map(tot))/5)*5 || 5;
+  const y = v => T + (H-T-B) * (1 - v/top);
+  const bw = (W-L-R)/D.length, barW = Math.min(34, bw*.5);
+  let g = '';
+  for(let t=0;t<=top;t+=top/5) g += `<line class="grid" x1="${L}" x2="${W-R}" y1="${y(t)}" y2="${y(t)}"/><text x="${L-8}" y="${y(t)+4}" text-anchor="end">${t}</text>`;
+  D.forEach((d,i)=>{
+    const x = L + bw*i + (bw-barW)/2; let acc = 0;
+    [['c','var(--accent)','추가'],['u','var(--accent-mid)','갱신'],['a','var(--warn)','보관'],['f','var(--bad)','실패']].forEach(([k,col,lb])=>{
+      if(!d[k]) return; const y0=y(acc), y1=y(acc+d[k]); acc+=d[k];
+      g += `<rect x="${x}" y="${y1}" width="${barW}" height="${Math.max(1,y0-y1)}" fill="${col}"><title>${d.d} ${lb} ${d[k]}건</title></rect>`;
+    });
+    if(tot(d)) g += `<text x="${x+barW/2}" y="${y(tot(d))-5}" text-anchor="middle" style="fill:var(--text);font-weight:600">${tot(d)}</text>`;
+    g += `<text x="${x+barW/2}" y="${H-8}" text-anchor="middle" ${i===D.length-1?'style="fill:var(--text);font-weight:600"':''}>${d.d}</text>`;
+  });
+  $('#chartBox').innerHTML = `<div style="overflow-x:auto"><svg class="chart" viewBox="0 0 ${W} ${H}" style="width:100%;min-width:420px;height:auto" role="img" aria-label="최근 7일 일별 DB 반영 건수">${g}</svg></div>`;
+}
+$('#btnSyncNow').onclick = async () => {
+  const btn = $('#btnSyncNow'); btn.disabled = true; $('#syncProg').hidden = false;
+  try{
+    const r = await api('api_runSync');
+    if(r.skipped) toast(r.message, 'bad');
+    else if(r.status==='실패') toast('실행 실패: ' + r.message, 'bad');
+    else toast(`DB 갱신 ${r.status} · 추가 ${r.c} · 갱신 ${r.u} · 보관 ${r.a}` + (r.f?` · 실패 ${r.f}`:'') + (r.w?` · 경고 ${r.w}`:''), r.f?'bad':'');
+    state.runs = null; state.dbv = null;
+    await loadDash();
+  }catch(e){ toast(errMsg(e), 'bad'); }
+  finally{ btn.disabled = false; $('#syncProg').hidden = true; }
+};
+
+/* ===================================================================== 2. 원본 · 저장 위치 */
+async function loadConnect(){
+  if(!state.cfg) await loadDash();
+  if(!state.form){
+    const c = state.cfg;
+    state.form = { sourceId:c.sourceId, sourceTab:c.sourceTab, headerRow:c.headerRow, dbMode:c.dbMode||'new', dbName:c.dbName, dbFolderId:c.dbFolderId, dbId:c.dbMode==='exist'?c.dbId:'' };
+  }
+  syncConnectInputs();
+  renderConnect();
+  if(!state.sheets){
+    $('#tree').innerHTML = skelRows(4);
+    try{
+      const [sheets, folders] = await Promise.all([api('api_listSpreadsheets'), api('api_listFolders')]);
+      state.sheets = sheets; state.folders = folders; showErr('#connErr', null);
+      if(state.form.sourceId) await loadTabs(state.form.sourceId, true);
+    }catch(e){ showErr('#connErr', e); }
+    syncConnectInputs(); renderConnect();
+  }
+}
+async function loadTabs(id, keep){
+  state.tabs = null; renderConnect();
+  try{
+    state.tabs = await api('api_getTabs', id);
+    if(!keep || !state.tabs.includes(state.form.sourceTab)) state.form.sourceTab = state.tabs[0] || '';
+  }catch(e){ state.tabs = []; toast(errMsg(e), 'bad'); }
+  renderConnect();
+}
+function syncConnectInputs(){
+  const f = state.form; if(!f) return;
+  $('#headerRow').value = f.headerRow; $('#dbName').value = f.dbName || '';
+  (f.dbMode==='exist' ? $('#dbExist') : $('#dbNew')).checked = true;
+  $('#dbFolder').innerHTML = (state.folders || [{id:f.dbFolderId||'', name:'불러오는 중'}]).map(x=>`<option value="${esc(x.id)}" ${x.id===f.dbFolderId?'selected':''}>${esc(x.name)}</option>`).join('');
+  if(state.folders && !f.dbFolderId) f.dbFolderId = state.folders[0].id;
+}
+function renderConnect(){
+  const f = state.form; if(!f) return;
+  const sheets = state.sheets || [];
+  const src = sheets.find(s=>s.id===f.sourceId);
+  const q = $('#sheetQ').value.trim().toLowerCase();
+  const steps = [
+    { t:'실행 계정', d: state.account || '확인 중', done: !!state.account },
+    { t:'원본 스프레드시트', d: src ? src.name : f.sourceId ? '선택됨' : '미선택', done: !!f.sourceId },
+    { t:'시트 탭 · 헤더', d: f.sourceTab ? `${f.sourceTab} · ${f.headerRow}행` : '대기', done: !!f.sourceTab },
+    { t:'DB 저장 위치', d: f.dbMode==='exist' ? ((sheets.find(s=>s.id===f.dbId)||{}).name || '파일 선택 필요') : (f.dbName || '파일명 필요'), done: f.dbMode==='exist' ? !!f.dbId : !!(f.dbName||'').trim() },
+  ];
+  const cur = steps.findIndex(x=>!x.done);
+  $('#stepper').innerHTML = steps.map((x,i)=>`<div class="step ${x.done?'done':''} ${i===cur?'cur':''}"><div class="dot">${x.done?ICON.ok.replace('class="i"','class="i" style="width:14px;height:14px"'):i+1}</div><div style="min-width:0"><b>${x.t}</b><span>${esc(x.d)}</span></div></div>`).join('');
+  $('#acctBox').innerHTML = `<div class="acct"><div class="avatar">${esc((state.account||'?')[0].toUpperCase())}</div><div style="min-width:0"><b style="font-size:13px;overflow-wrap:anywhere">${esc(state.account||'확인 중')}</b><div class="hint">웹앱과 트리거는 이 계정 권한으로 실행됨</div></div></div><p class="hint" style="margin:10px 0 0">권한 범위: 원본 시트 읽기 · DB 파일 생성과 편집 · 트리거 · 실패 알림 메일</p>`;
+
+  if(state.sheets){
+    const list = sheets.filter(s => !s.isDb && (!q || s.name.toLowerCase().includes(q)));
+    const groups = {}; list.forEach(s => (groups[s.folder] = groups[s.folder] || []).push(s));
+    $('#tree').innerHTML = list.length ? Object.keys(groups).map(g => `<div class="folder">${esc(g)}</div>` +
+      groups[g].map(s => `<button class="${s.id===f.sourceId?'sel':''}" data-sheet="${esc(s.id)}">${ICON.sheet}<span style="min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(s.name)}</span><span class="meta">${new Date(s.updated).toLocaleDateString('ko-KR')}</span></button>`).join('')).join('')
+      : `<div class="empty" style="padding:24px 8px">${ICON.inbox}<span>${q?'검색 결과가 없음':'접근 가능한 스프레드시트가 없음'}</span></div>`;
+  }
+  $('#tabPick').innerHTML = !f.sourceId ? '<span class="hint">원본 스프레드시트를 먼저 선택함</span>'
+    : state.tabs === null ? '<div class="skel" style="width:180px"></div>'
+    : state.tabs.map(t=>`<button aria-pressed="${t===f.sourceTab}" data-tab="${esc(t)}">${esc(t)}</button>`).join('');
+  $('#headerHint').textContent = `${f.headerRow}행을 컬럼명, ${+f.headerRow+1}행부터 데이터로 읽음`;
+  $('#dbNewFields').hidden = f.dbMode!=='new'; $('#dbExistField').hidden = f.dbMode!=='exist';
+  $('#dbNameErr').hidden = f.dbMode!=='new' || !!(f.dbName||'').trim();
+  $('#dbExisting').innerHTML = `<option value="">파일 선택</option>` + sheets.filter(s=>s.id!==f.sourceId).map(s=>`<option value="${esc(s.id)}" ${s.id===f.dbId?'selected':''}>${esc(s.name)}${s.isDb?' (현재 DB)':''} · ${esc(s.folder)}</option>`).join('');
+}
+$('#tree').addEventListener('click', e => { const b = e.target.closest('[data-sheet]'); if(!b) return; state.form.sourceId = b.dataset.sheet; loadTabs(b.dataset.sheet, false); });
+$('#tabPick').addEventListener('click', e => { const b = e.target.closest('[data-tab]'); if(!b) return; state.form.sourceTab = b.dataset.tab; renderConnect(); });
+$('#sheetQ').oninput = renderConnect;
+$('#headerRow').oninput = e => { state.form.headerRow = Math.max(1, +e.target.value || 1); renderConnect(); };
+$('#dbName').oninput = e => { state.form.dbName = e.target.value; renderConnect(); };
+$('#dbFolder').onchange = e => { state.form.dbFolderId = e.target.value; };
+$('#dbExisting').onchange = e => { state.form.dbId = e.target.value; renderConnect(); };
+document.querySelectorAll('input[name=dbmode]').forEach(i => i.onchange = () => { state.form.dbMode = i.value; renderConnect(); });
+$('#btnSaveConn').onclick = async () => {
+  const btn = $('#btnSaveConn'); btn.disabled = true;
+  try{
+    state.cfg = await api('api_saveConnection', state.form);
+    state.cols = null; state.schema = null; state.dbv = null; state.runs = null;
+    toast(state.cfg.dbId ? '설정 저장됨' : `설정 저장됨 · "${state.cfg.dbName}"은 첫 실행 때 만들어짐`);
+    loadDash();
+  }catch(e){ toast(errMsg(e), 'bad'); }
+  finally{ btn.disabled = false; }
+};
+
+/* ===================================================================== 3. DB 속성 설계 */
+async function loadSchema(){
+  if(!state.cfg) await loadDash();
+  if(state.cols && state.schema){ renderSchema(); return; }
+  $('#mapBody').innerHTML = `<tr><td colspan="7">${skelRows(4)}</td></tr>`; $('#mapPreview').innerHTML = '';
+  try{
+    state.cols = await api('api_getColumns');
+    const saved = {}; (state.cfg.schema||[]).forEach(s => saved[s.col] = s);
+    state.schema = state.cols.columns.map(c => saved[c.name] ? { ...saved[c.name], kind:c.kind } : { col:c.name, kind:c.kind, prop:c.name, type:c.auto, on:true });
+    state.keyCol = state.cols.columns.some(c=>c.name===state.cfg.keyCol) ? state.cfg.keyCol : state.cols.keyGuess;
+    showErr('#schemaErr', null); renderSchema();
+  }catch(e){
+    showErr('#schemaErr', e);
+    $('#mapBody').innerHTML = `<tr><td colspan="7"><div class="empty">${ICON.inbox}<span>원본 컬럼을 읽지 못해 속성을 설계할 수 없음</span><button class="btn" onclick="go('connect')">원본 · 저장 위치로 이동</button></div></td></tr>`;
+  }
+}
+const mapIssues = () => (state.schema||[]).filter(m => m.on && !(COMPAT[m.kind]||[]).includes(m.type));
+function renderSchema(){
+  const S = state.schema; if(!S) return;
+  const issues = mapIssues();
+  $('#mapBanner').hidden = !issues.length;
+  $('#mapBannerText').innerHTML = issues.length ? `<b>${issues.map(m=>esc(m.col)).join(', ')}</b> 컬럼 값이 지정한 속성 유형과 맞지 않음. 이대로 저장하면 변환할 수 없는 셀은 빈 값으로 들어가고 _log_detail 탭에 경고로 기록됨.` : '';
+  $('#navMap').textContent = issues.length; $('#navMap').hidden = !issues.length;
+  $('#mapCount').textContent = `${S.filter(m=>m.on).length} / ${S.length}개 컬럼 · 시스템 컬럼 ${META_COLS.length}개 자동 추가`;
+  $('#mapBody').innerHTML = S.map((m,i)=>{
+    const bad = m.on && !(COMPAT[m.kind]||[]).includes(m.type);
+    return `<tr class="map-row">
+      <td><div class="col-name"><b style="font-weight:500">${esc(m.col)}</b><span class="kind">${m.kind}</span></div></td>
+      <td class="arrow">→</td>
+      <td><input class="input" id="mp_${i}" data-i="${i}" data-f="prop" value="${esc(m.prop)}" ${m.on?'':'disabled'} aria-label="${esc(m.col)} DB 속성명"></td>
+      <td><select class="input" id="mt_${i}" data-i="${i}" data-f="type" aria-label="${esc(m.col)} 속성 유형">
+        <option value="__off" ${m.on?'':'selected'}>DB에서 제외</option>
+        ${Object.keys(PROP_TYPES).map(t=>`<option ${m.on&&m.type===t?'selected':''}>${t}</option>`).join('')}</select></td>
+      <td class="impl">${m.on ? esc(PROP_TYPES[m.type]) : '—'}</td>
+      <td><div class="key-radio"><input type="radio" name="keycol" id="mk_${i}" data-i="${i}" ${state.keyCol===m.col?'checked':''} ${m.on?'':'disabled'} aria-label="${esc(m.col)}을 고유 키로 지정"></div></td>
+      <td>${!m.on?'<span class="hint">제외</span>': bad?`<span class="warn-ico">${ICON.warn}권장: ${COMPAT[m.kind][0]}</span>` : state.keyCol===m.col?'<span class="badge b-info">키</span>':'<span class="badge b-ok">정상</span>'}</td></tr>`;
+  }).join('') + META_COLS.map(c=>`<tr class="meta-row"><td class="mono">자동</td><td class="arrow">→</td><td class="mono">${c.name}</td><td>시스템</td><td class="impl">${c.desc} · 편집 경고</td><td></td><td></td></tr>`).join('');
+  const titles = S.filter(m=>m.on && m.type==='제목').length;
+  const okKey = state.keyCol && S.find(m=>m.col===state.keyCol)?.on;
+  const btn = $('#btnSaveMap'); btn.disabled = !okKey || titles!==1;
+  btn.title = !okKey ? '고유 키 1개를 지정함' : titles!==1 ? '제목 속성을 정확히 1개 지정함' : '';
+
+  const c = state.cfg;
+  $('#dbTabName').textContent = `${c.dbName||'DB'} › DB_${(c.dbName||'').replace(/^\[DB\]\s*/,'') || '본문'} 탭 · 원본 상위 3행`;
+  const cols = S.map((m,i)=>({...m,i})).filter(m=>m.on).sort((a,b)=>(b.type==='제목')-(a.type==='제목'));
+  const cell = (m, v) => {
+    if(!(COMPAT[m.kind]||[]).includes(m.type)) return `<span class="warn-ico">${ICON.warn}변환 불가</span>`;
+    if(v===''||v==null) return '<span class="hint">비어 있음</span>';
+    switch(m.type){
+      case '제목': return `<b>${esc(v)}</b>`;
+      case '숫자': { const n = Number(String(v).replace(/[,\s원]/g,'')); return `<span class="num">${isFinite(n)?fmtNum(n):esc(v)}</span>`; }
+      case '선택': return `<span class="chip">${esc(v)}</span>`;
+      case '다중 선택': return String(v).split(/[,;]/).map(x=>x.trim()).filter(Boolean).map(x=>`<span class="chip">${esc(x)}</span>`).join(' ');
+      case '사람': return `@${esc(v)}`;
+      case '날짜': return `<span class="num mono">${esc(String(v).slice(0,10))}</span>`;
+      case '체크박스': return /^(true|y|o|1)$/i.test(v) ? '☑' : '☐';
+      default: return esc(v);
+    }
+  };
+  const samples = state.cols.samples || [];
+  const keyI = S.findIndex(m=>m.col===state.keyCol);
+  $('#mapPreview').innerHTML = samples.length ? `<table><thead><tr>${cols.map(m=>`<th><div class="hd-cell">${esc(m.prop)}<small>${m.type}</small></div></th>`).join('')}${META_COLS.slice(0,3).map(c=>`<th style="color:var(--faint)"><div class="hd-cell mono">${c.name}<small>시스템</small></div></th>`).join('')}</tr></thead>
+    <tbody>${samples.map((r,ri)=>`<tr>${cols.map(m=>`<td ${m.type==='숫자'?'class="r"':''}>${cell(m, r[m.i])}</td>`).join('')}
+      <td class="mono" style="color:var(--faint)">${esc(keyI>=0?r[keyI]:'')}</td><td class="mono num" style="color:var(--faint)">${(+c.headerRow||1)+1+ri}</td><td class="mono num" style="color:var(--faint)">실행 시각</td></tr>`).join('')}</tbody></table>`
+    : `<div class="empty">${ICON.inbox}<span>원본에 데이터 행이 없어 미리보기를 만들 수 없음</span></div>`;
+}
+$('#mapBody').addEventListener('change', e => {
+  const i = +e.target.dataset.i; if(isNaN(i)) return; const m = state.schema[i];
+  if(e.target.type==='radio') state.keyCol = m.col;
+  else if(e.target.dataset.f==='type'){ if(e.target.value==='__off'){ m.on=false; if(state.keyCol===m.col) state.keyCol=''; } else { m.on=true; m.type=e.target.value; } }
+  renderSchema();
+});
+$('#mapBody').addEventListener('input', e => { if(e.target.dataset.f==='prop'){ state.schema[+e.target.dataset.i].prop = e.target.value; const id=e.target.id, pos=e.target.selectionStart; renderSchema(); const el=$('#'+id); el.focus(); el.setSelectionRange(pos,pos); } });
+$('#btnAutoMap').onclick = () => {
+  if(!state.cols) return;
+  const auto = {}; state.cols.columns.forEach(c => auto[c.name] = c.auto);
+  state.schema.forEach(m => { m.on = true; m.type = auto[m.col]; });
+  if(!state.keyCol) state.keyCol = state.cols.keyGuess;
+  renderSchema(); toast(`값 형식 기준으로 ${state.schema.length}개 속성 유형을 추천함`);
+};
+$('#btnSaveMap').onclick = async () => {
+  const btn = $('#btnSaveMap'); btn.disabled = true;
+  try{
+    state.cfg = await api('api_saveSchema', { schema: state.schema, keyCol: state.keyCol });
+    state.dbv = null;
+    toast(mapIssues().length ? `저장됨 · 유형 불일치 ${mapIssues().length}건은 다음 실행 때 경고로 기록됨` : '속성 저장됨 · 다음 실행 때 DB 시트에 반영됨', mapIssues().length?'bad':'');
+  }catch(e){ toast(errMsg(e), 'bad'); }
+  finally{ renderSchema(); }
+};
+
+/* ===================================================================== 4. 자동화 규칙 */
+let rulesFilled = false;
+async function loadRules(){
+  if(!state.cfg) await loadDash();
+  if(!rulesFilled){
+    const r = state.cfg.rules;
+    ({ manual:$('#trigManual'), edit:$('#trigEdit'), cron:$('#trigCron') }[r.trigger] || $('#trigManual')).checked = true;
+    $('#cronEvery').value = r.every; $('#cronTime').value = r.dailyTime;
+    (r.conflict==='keep' ? $('#confKeep') : $('#confSrc')).checked = true;
+    $('#delPolicy').value = r.deletion; $('#notiMail').value = r.mail || ''; $('#notiTeams').value = r.teams || '';
+    state.conds = (r.conds || []).map(c => ({...c}));
+    rulesFilled = true;
+  }
+  if(!state.cols && state.cfg.sourceId){ try{ state.cols = await api('api_getColumns'); }catch(e){ /* 컬럼 목록 없이도 규칙 편집 가능 */ } }
+  renderRules();
+}
+function colNames(){
+  if(state.cols) return state.cols.columns.map(c=>c.name);
+  return (state.cfg && state.cfg.schema || []).map(s=>s.col);
+}
+function renderRules(){
+  $('#cronTime').hidden = $('#cronEvery').value!=='daily';
+  const d = state.dash && state.dash.triggers;
+  $('#trigState').innerHTML = d ? `현재: ${esc(d.text)} <span class="badge b-${d.active?'ok':'warn'}">${d.active?'설치됨':'미설치'}</span>` : '';
+  const names = colNames();
+  $('#condList').innerHTML = state.conds.length ? state.conds.map((c,i)=>`<div class="cond">
+      <select class="input" id="cc_${i}" data-i="${i}" data-f="col" aria-label="조건 컬럼">${(names.includes(c.col)?names:[c.col,...names]).map(x=>`<option ${x===c.col?'selected':''}>${esc(x)}</option>`).join('')}</select>
+      <select class="input" id="co_${i}" data-i="${i}" data-f="op" aria-label="연산자">${OPS.map(o=>`<option ${o===c.op?'selected':''}>${o}</option>`).join('')}</select>
+      <input class="input" id="cv_${i}" data-i="${i}" data-f="val" value="${esc(c.val)}" aria-label="조건 값" ${c.op==='비어 있음'?'disabled':''} placeholder="${c.op==='이후'||c.op==='이전'?'예: 2026-09-01 또는 숫자':''}">
+      <button class="btn ghost" data-del="${i}" aria-label="조건 삭제" style="padding:6px">${ICON.x}</button></div>`).join('')
+    : `<div class="empty" style="padding:18px">${ICON.inbox}<span>조건이 없어 원본의 모든 행을 DB에 넣음</span></div>`;
+}
+$('#cronEvery').onchange = renderRules;
+$('#condList').addEventListener('change', e => { const i=+e.target.dataset.i; if(isNaN(i)) return; state.conds[i][e.target.dataset.f]=e.target.value; renderRules(); });
+$('#condList').addEventListener('input', e => { if(e.target.dataset.f==='val') state.conds[+e.target.dataset.i].val = e.target.value; });
+$('#condList').addEventListener('click', e => { const b=e.target.closest('[data-del]'); if(b){ state.conds.splice(+b.dataset.del,1); renderRules(); } });
+$('#btnAddCond').onclick = () => { const n = colNames(); state.conds.push({ col:n[0]||'', op:'=', val:'' }); renderRules(); };
+$('#btnSaveRules').onclick = async () => {
+  const btn = $('#btnSaveRules'); btn.disabled = true;
+  const rules = {
+    trigger: document.querySelector('input[name=trig]:checked').value,
+    every: $('#cronEvery').value, dailyTime: $('#cronTime').value,
+    conflict: document.querySelector('input[name=conflict]:checked').value,
+    deletion: $('#delPolicy').value, conds: state.conds,
+    mail: $('#notiMail').value.trim(), teams: $('#notiTeams').value.trim(),
+  };
+  try{
+    const res = await api('api_saveRules', rules);
+    state.cfg = res.config; if(state.dash) state.dash.triggers = res.triggers;
+    renderRules(); toast('규칙 저장됨 · ' + res.triggers.text);
+  }catch(e){ toast(errMsg(e), 'bad'); }
+  finally{ btn.disabled = false; }
+};
+
+/* ===================================================================== 5. 실행 이력 */
+async function loadHistory(){
+  $('#histBox').innerHTML = skelRows(5);
+  try{ state.runs = await api('api_getRuns', 30); showErr('#histErr', null); renderHistory(); }
+  catch(e){ showErr('#histErr', e); $('#histBox').innerHTML = ''; }
+}
+function filteredRuns(){
+  const per = +$('#fPeriod').value, st = $('#fStatus').value;
+  return (state.runs||[]).filter(r => (per===1 ? r.days===0 : r.days < per) && (st==='all' || statusKey(r.status)===st));
+}
+function renderHistory(){
+  const rows = filteredRuns();
+  const none = !(state.runs||[]).length;
+  $('#histBox').innerHTML = rows.length ? `<table><thead><tr><th>실행 ID</th><th>실행 방식</th><th>시작</th><th>종료</th><th class="r">추가</th><th class="r">갱신</th><th class="r">보관</th><th class="r">실패</th><th class="r">경고</th><th>상태</th></tr></thead><tbody>
+    ${rows.map(r=>`<tr class="click" tabindex="0" data-run="${esc(r.id)}"><td class="mono">${esc(r.id)}</td><td>${esc(r.trig)}</td><td class="num">${esc(r.start)}</td><td class="num">${esc(r.end)}</td>
+    <td class="r num">${r.c}</td><td class="r num">${r.u}</td><td class="r num">${r.a}</td><td class="r num" style="${r.f?'color:var(--bad);font-weight:600':''}">${r.f}</td><td class="r num" style="${r.w?'color:var(--warn)':''}">${r.w}</td><td><span class="badge b-${statusKey(r.status)}">${esc(r.status)}</span></td></tr>`).join('')}</tbody></table>`
+    : `<div class="empty">${ICON.inbox}<b style="color:var(--text)">${none?'아직 실행 기록이 없음':'조건에 맞는 실행 이력이 없음'}</b><span>${none?'대시보드에서 "지금 DB 갱신"을 실행하면 여기에 쌓임':'기간을 넓히거나 상태를 "전체 상태"로 바꿈'}</span></div>`;
+}
+$('#fPeriod').onchange = renderHistory; $('#fStatus').onchange = renderHistory;
+$('#histBox').addEventListener('click', e => { const tr=e.target.closest('[data-run]'); if(tr) openRun(tr.dataset.run); });
+$('#histBox').addEventListener('keydown', e => { const tr=e.target.closest('[data-run]'); if(tr && (e.key==='Enter'||e.key===' ')){ e.preventDefault(); openRun(tr.dataset.run); } });
+async function openRun(id){
+  const r = state.runs.find(x=>x.id===id);
+  const shell = body => `<div class="scrim" data-close></div><aside class="drawer" role="dialog" aria-modal="true" aria-labelledby="drT">
+    <div class="drawer-h"><h3 id="drT" class="mono" style="font-size:14px">${esc(r.id)}</h3><span class="badge b-${statusKey(r.status)}">${esc(r.status)}</span><button class="btn ghost" data-close style="margin-left:auto;padding:6px" aria-label="닫기">${ICON.x}</button></div>
+    <div class="drawer-b">
+      ${r.message?`<div class="banner bad">${ICON.warn}<div>${esc(r.message)}</div></div>`:''}
+      <dl class="kv"><dt>실행 방식</dt><dd>${esc(r.trig)}</dd><dt>시작 · 종료</dt><dd class="num">${esc(r.start)} → ${esc(r.end)}</dd><dt>처리 결과</dt><dd class="num">추가 ${r.c} · 갱신 ${r.u} · 보관 ${r.a} · 실패 ${r.f} · 경고 ${r.w}</dd></dl>
+      <div class="row" style="justify-content:space-between"><b style="font-size:13.5px">행 단위 로그</b>${(r.f||r.message)?`<button class="btn primary" id="btnRetry">다시 실행</button>`:''}</div>
+      ${body}</div></aside>`;
+  $('#overlay').innerHTML = shell(skelRows(4));
+  try{
+    const logs = await api('api_getRunDetail', id);
+    const cls = { '추가':'ok', '갱신':'ok', '보관':'warn', '보존':'info', '경고':'warn', '실패':'bad' };
+    $('#overlay').innerHTML = shell(logs.length ? `<div class="tbl-wrap card"><table><thead><tr><th>고유 키</th><th>처리</th><th>내용</th></tr></thead><tbody>
+      ${logs.map(l=>`<tr><td class="mono">${esc(l.key)}</td><td><span class="badge b-${cls[l.res]||'idle'}">${esc(l.res)}</span></td><td style="${l.res==='실패'?'color:var(--bad)':''}">${esc(l.msg)}</td></tr>`).join('')}</tbody></table></div>${logs.length>=500?'<span class="hint">최대 500행까지 표시함. 전체는 _log_detail 탭에서 확인함</span>':''}`
+      : `<div class="empty">${ICON.inbox}<span>변경된 행이 없어 반영할 내용이 없었음</span></div>`);
+  }catch(e){ $('#overlay').innerHTML = shell(`<div class="banner bad">${ICON.warn}<div>${esc(errMsg(e))}</div></div>`); }
+  const rb = $('#btnRetry');
+  if(rb) rb.onclick = async () => {
+    rb.disabled = true; rb.textContent = '실행 중';
+    try{ const res = await api('api_runSync'); closeOverlay(); toast(res.skipped ? res.message : `다시 실행 ${res.status} · 실패 ${res.f}건`, res.f||res.skipped?'bad':''); state.dbv = null; await loadHistory(); loadDash(); }
+    catch(e){ toast(errMsg(e), 'bad'); rb.disabled = false; rb.textContent = '다시 실행'; }
+  };
+}
+function closeOverlay(){ $('#overlay').innerHTML = ''; }
+$('#overlay').addEventListener('click', e => { if(e.target.closest('[data-close]')) closeOverlay(); });
+document.addEventListener('keydown', e => { if(e.key==='Escape') closeOverlay(); });
+$('#btnCsv').onclick = () => {
+  const rows = filteredRuns();
+  const q = v => /[",\n]/.test(String(v)) ? '"'+String(v).replace(/"/g,'""')+'"' : v;
+  const csv = ['실행ID,실행방식,시작,종료,추가,갱신,보관,실패,경고,상태,메시지', ...rows.map(r=>[r.id,r.trig,r.start,r.end,r.c,r.u,r.a,r.f,r.w,r.status,r.message].map(q).join(','))].join('\n');
+  navigator.clipboard.writeText(csv).then(()=>toast(`CSV ${rows.length}행을 클립보드에 복사함`)).catch(()=>toast('클립보드 접근이 막혀 복사하지 못함','bad'));
+};
+
+/* ===================================================================== 6. DB 뷰 */
+async function loadDb(){
+  if(state.dbv){ renderDb(); return; }
+  $('#pvBox').innerHTML = skelRows(6);
+  try{
+    state.dbv = await api('api_getDbView'); showErr('#dbErr', null);
+    const v = state.dbv;
+    if(v.exists){
+      const sortable = v.header.map((h,i)=>({h,i,t:v.types[i]})).filter(x=>x.t==='날짜'||x.t==='숫자');
+      $('#pvSort').innerHTML = `<option value="">원래 순서</option>` + sortable.map(x=>`<option value="${x.i}:asc">${esc(x.h)} 오름차순</option><option value="${x.i}:desc">${esc(x.h)} 내림차순</option>`).join('');
+      const groups = v.header.map((h,i)=>({h,i,t:v.types[i]})).filter(x=>x.t==='선택'||x.t==='사람');
+      $('#pvGroup').innerHTML = groups.map(x=>`<option value="${x.i}" ${x.h==='진행상태'?'selected':''}>${esc(x.h)}별</option>`).join('');
+    }
+    renderDb();
+  }catch(e){ showErr('#dbErr', e); $('#pvBox').innerHTML = ''; }
+}
+function renderDb(){
+  const v = state.dbv; if(!v) return;
+  document.querySelectorAll('[data-pv]').forEach(b => b.setAttribute('aria-pressed', b.dataset.pv===state.pv));
+  $('#dbTitle').textContent = v.name || 'DB';
+  $('#dbOpen').hidden = !v.url; if(v.url) $('#dbOpen').href = v.url;
+  if(!v.exists){
+    $('#pvCount').textContent = ''; $('#pvSort').hidden = true; $('#pvGroup').hidden = true;
+    $('#pvBox').innerHTML = `<div class="empty">${ICON.db}<b style="color:var(--text)">DB 파일이 아직 없음</b><span>설정을 마친 뒤 대시보드에서 "지금 DB 갱신"을 실행하면 "${esc(v.name||'')}" 파일이 만들어짐</span><button class="btn primary" onclick="go('dash')">대시보드로 이동</button></div>`;
+    return;
+  }
+  $('#pvCount').textContent = `레코드 ${fmtNum(v.total)}건` + (v.total > v.rows.length ? ` · 상위 ${v.rows.length}건 표시` : '');
+  $('#pvSort').hidden = state.pv==='struct' || $('#pvSort').options.length<2;
+  $('#pvGroup').hidden = state.pv!=='board' || !$('#pvGroup').options.length;
+  const vis = v.header.map((h,i)=>({h,i,t:v.types[i]})).filter(x=>x.t!=='시스템');
+  const srcI = v.header.indexOf('_src_row');
+  const openBtn = r => v.sourceUrl && srcI>=0 && r[srcI] ? `<a class="open" href="${esc(v.sourceUrl)}&range=A${esc(r[srcI])}" target="_blank" rel="noopener" aria-label="원본 행 열기" title="원본시트 ${esc(r[srcI])}행 열기">${ICON.ext}</a>` : '';
+  const cell = (x, val) => {
+    if(val===''||val==null) return '';
+    switch(x.t){
+      case '제목': return `<b style="font-weight:600">${esc(val)}</b>`;
+      case '숫자': return typeof val==='number' ? fmtNum(val) : esc(val);
+      case '선택': return `<span class="chip">${esc(val)}</span>`;
+      case '다중 선택': return String(val).split(',').map(s=>s.trim()).filter(Boolean).map(s=>`<span class="chip">${esc(s)}</span>`).join(' ');
+      case '사람': return '@'+esc(val);
+      case '체크박스': return val===true ? '☑' : '☐';
+      case 'URL': return /^https?:\/\//.test(val) ? `<a href="${esc(val)}" target="_blank" rel="noopener">${esc(val)}</a>` : esc(val);
+      default: return esc(val);
+    }
+  };
+  if(state.pv==='struct'){
+    $('#pvBox').innerHTML = `<div class="struct">${v.structure.map((t,i)=>`<div class="struct-item"><span style="color:var(--faint)">${i===0?ICON.db:ICON.sheet}</span><span class="tabname">${esc(t.name)}</span><span class="d">${esc(t.desc)}</span><span class="chip num cnt">${fmtNum(t.rows)}행</span></div>`).join('')}</div>
+      <div class="card-b" style="border-top:1px solid var(--line)"><div class="banner" style="border-color:var(--line);background:var(--surface-2)">${ICON.drive}<div>이 파일은 Drive의 <b>${esc(v.folder)}</b> 폴더에 있음. ChatGPT에서 Google Drive를 연결해 이 파일을 선택하면 <span class="mono">_schema</span> 탭으로 속성 의미를 읽고 <span class="mono">${esc(v.tab)}</span> 탭을 조회함.</div></div></div>`;
+    return;
+  }
+  let rows = v.rows.slice();
+  const sv = $('#pvSort').value;
+  if(sv){ const [i,dir] = sv.split(':'); const k = +i; rows.sort((a,b)=>{ const x=a[k], y=b[k]; if(x===''&&y!=='') return 1; if(y===''&&x!=='') return -1; const r = typeof x==='number'&&typeof y==='number' ? x-y : String(x).localeCompare(String(y)); return dir==='asc'?r:-r; }); }
+  if(!rows.length){ $('#pvBox').innerHTML = `<div class="empty">${ICON.inbox}<b style="color:var(--text)">DB에 레코드가 없음</b><span>원본에 데이터가 없거나 행 조건이 모든 행을 제외하고 있음</span></div>`; return; }
+  if(state.pv==='table'){
+    $('#pvBox').innerHTML = `<div class="tbl-wrap"><table><thead><tr>${vis.map(x=>`<th class="${x.t==='숫자'?'r':''}">${esc(x.h)}</th>`).join('')}<th></th></tr></thead><tbody>
+      ${rows.map(r=>`<tr>${vis.map(x=>`<td class="${x.t==='숫자'?'r num':x.t==='날짜'?'num':''}">${cell(x, r[x.i])}</td>`).join('')}<td>${openBtn(r)}</td></tr>`).join('')}</tbody></table></div>`;
+    return;
+  }
+  const gi = +$('#pvGroup').value;
+  if(!$('#pvGroup').options.length){ $('#pvBox').innerHTML = `<div class="empty">${ICON.inbox}<span>보드로 묶을 선택 또는 사람 속성이 없음. DB 속성 설계에서 지정함</span></div>`; return; }
+  const title = vis.find(x=>x.t==='제목') || vis[0];
+  const metaX = vis.filter(x=>x!==title && x.i!==gi && (x.t==='선택'||x.t==='날짜'||x.t==='사람')).slice(0,3);
+  const keys = [...new Set(rows.map(r=>String(r[gi]||'(비어 있음)')))];
+  $('#pvBox').innerHTML = `<div class="kanban" style="grid-template-columns:repeat(${Math.max(keys.length,1)},minmax(210px,1fr))">${keys.map(k=>{ const items = rows.filter(r=>String(r[gi]||'(비어 있음)')===k);
+    return `<div class="kcol"><div class="kcol-h">${esc(k)}<span class="cnt">${items.length}</span></div>
+    ${items.map(r=>`<div class="kcard"><b>${esc(r[title.i])}</b><div class="meta">${metaX.map(x=>r[x.i]!==''?`<span>${cell(x,r[x.i])}</span>`:'').join('')}${openBtn(r)}</div></div>`).join('')}</div>`; }).join('')}</div>`;
+}
+document.querySelectorAll('[data-pv]').forEach(b => b.onclick = () => { state.pv = b.dataset.pv; renderDb(); });
+$('#pvSort').onchange = renderDb; $('#pvGroup').onchange = renderDb;
+
+/* =====================================================================
+ * DEMO — Apps Script 밖(미리보기)에서만 사용하는 예시 서버
+ * ===================================================================== */
+const DEMO = (() => {
+  const COLS = [['사업ID','text'],['사업명','text'],['발주기관','select'],['공고일','date'],['제안마감일','date'],['사업금액','number'],['사업유형','select'],['진행상태','select'],['담당PM','person'],['요구사항수','number'],['비고','text'],['최종수정일','date']];
+  const ROWS = [
+    ['PRJ-2026-041','○○공사 제안서 평가시스템 구축','○○공사','2026-08-04','2026-09-30',480000000,'SI','작성중','김OO',64,'정성 1차 검토','2026-09-25'],
+    ['PRJ-2026-038','△△진흥원 통합포털 운영','△△진흥원','2026-07-22','2026-09-28',1250000000,'SM','발표준비','박OO',112,'','2026-09-24'],
+    ['PRJ-2026-044','□□공단 전력거래 분석 고도화','□□공단','2026-08-18','2026-10-14',730000000,'SI','검토','이OO',0,'RFP 분석 대기','2026-09-23'],
+    ['PRJ-2026-035','◇◇발전 설비관리시스템 유지관리','◇◇발전','2026-07-01','2026-08-19',390000000,'유지관리','제출완료','최OO',48,'','2026-08-19'],
+    ['PRJ-2026-046','☆☆공사 데이터거버넌스 컨설팅','☆☆공사','2026-09-02','2026-10-21',260000000,'컨설팅','검토','김OO',0,'','2026-09-22'],
+    ['PRJ-2026-029','▽▽청 민원시스템 재구축','▽▽청','2026-05-12','2026-06-30',910000000,'SI','종료','박OO',87,'미선정','2026-07-15'],
+    ['PRJ-2026-042','○○공사 변전 설계지원 AI','○○공사','2026-08-11','2026-10-02',1580000000,'SI','작성중','이OO',135,'','2026-09-25'],
+    ['PRJ-2026-039','△△재단 홈페이지 운영','△△재단','2026-07-28','2026-09-18',180000000,'SM','제출완료','최OO',32,'','2026-09-18'],
+  ];
+  const AUTO = { text:'텍스트', select:'선택', date:'날짜', number:'숫자', person:'사람', bool:'체크박스' };
+  const cfg = { sourceId:'s1', sourceTab:'원본', headerRow:1, dbMode:'new', dbId:'db1', dbName:'[DB] 제안사업', dbFolderId:'f3',
+    schema: COLS.map(([c,k]) => ({ col:c, kind:k, prop:c, type: c==='사업명'?'제목':AUTO[k], on: c!=='비고' })), keyCol:'사업ID',
+    rules:{ trigger:'cron', every:'1h', dailyTime:'08:50', conflict:'src', deletion:'archive', conds:[{col:'진행상태',op:'≠',val:'종료'}], mail:'pm@example.co.kr', teams:'' } };
+  cfg.schema.find(s=>s.col==='사업금액').type = '날짜';   // 작업 중 상태 예시: 유형 불일치 1건
+  const runs = [
+    { id:'RUN-0925-140002', trig:'시간 기반', start:'09-25 14:00:02', end:'14:00:09', day:'09-25', days:0, c:0, u:4, a:0, f:0, w:0, status:'성공', message:'' },
+    { id:'RUN-0925-131240', trig:'원본 편집', start:'09-25 13:12:40', end:'13:12:44', day:'09-25', days:0, c:1, u:3, a:0, f:2, w:1, status:'부분 실패', message:'' },
+    { id:'RUN-0925-090015', trig:'수동', start:'09-25 09:00:15', end:'09:00:22', day:'09-25', days:0, c:0, u:3, a:0, f:0, w:0, status:'성공', message:'' },
+    { id:'RUN-0924-170002', trig:'시간 기반', start:'09-24 17:00:02', end:'17:00:13', day:'09-24', days:1, c:0, u:17, a:0, f:0, w:0, status:'성공', message:'' },
+    { id:'RUN-0923-150001', trig:'시간 기반', start:'09-23 15:00:01', end:'15:00:03', day:'09-23', days:2, c:0, u:0, a:0, f:0, w:0, status:'실패', message:'원본에서 "원본" 탭을 찾을 수 없음' },
+    { id:'RUN-0922-110002', trig:'시간 기반', start:'09-22 11:00:02', end:'11:00:18', day:'09-22', days:3, c:2, u:14, a:1, f:0, w:0, status:'성공', message:'' },
+    { id:'RUN-0901-090012', trig:'수동', start:'09-01 09:00:12', end:'09:00:40', day:'09-01', days:24, c:8, u:0, a:0, f:0, w:0, status:'성공', message:'' },
+  ];
+  const daily = () => ['09-19','09-20','09-21','09-22','09-23','09-24','09-25'].map(d => { const rs = runs.filter(r=>r.day===d); const s = k => rs.reduce((a,r)=>a+r[k],0); return { d, c:s('c'), u:s('u'), a:s('a'), f:s('f') }; });
+  const kept = () => ROWS.filter(r => r[7] !== '종료');
+  return {
+    api_dashboard: () => ({ account:'pm@example.co.kr', config:cfg, source:{ ok:true, name:'제안사업 관리대장', tab:cfg.sourceTab, cols:12, rows:ROWS.length },
+      db:{ ok:true, name:cfg.dbName, url:'', tab:'DB_제안사업', records:kept().length, archived:ROWS.length-kept().length },
+      runs, daily:daily(), triggers:{ text:trigText(cfg.rules), active:true }, lastError:'' }),
+    api_listSpreadsheets: () => [
+      { id:'s1', name:'제안사업 관리대장', folder:'제안팀 공유', updated:Date.now()-36e5 },
+      { id:'s2', name:'인력 투입계획', folder:'제안팀 공유', updated:Date.now()-864e5 },
+      { id:'s3', name:'RFP 요구사항 추출', folder:'RFP 분석', updated:Date.now()-2*864e5 },
+      { id:'db1', name:'[DB] 제안사업', folder:'제안팀 공유 / DB', updated:Date.now()-6e5, isDb:true },
+    ],
+    api_listFolders: () => [{ id:'root', name:'내 드라이브' }, { id:'f3', name:'제안팀 공유 / DB' }, { id:'f1', name:'제안팀 공유' }, { id:'f2', name:'RFP 분석' }],
+    api_getTabs: id => ({ s1:['원본','요약','코드표'], s2:['2026','2025'], s3:['추출결과','검토'] }[id] || ['Sheet1']),
+    api_getColumns: () => ({ columns: COLS.map(([c,k]) => ({ name:c, kind:k, auto: c==='사업명'?'제목':AUTO[k] })), samples: ROWS.slice(0,3).map(r=>r.map(String)), keyGuess:'사업ID' }),
+    api_saveConnection: p => { Object.assign(cfg, p); return cfg; },
+    api_saveSchema: p => { if(!p.schema.some(s=>s.on&&s.col===p.keyCol)) throw new Error('DB에 포함된 컬럼 중 고유 키 1개를 지정함'); cfg.schema = p.schema; cfg.keyCol = p.keyCol; return cfg; },
+    api_saveRules: r => { if(r.teams && !/^https:\/\//.test(r.teams)) throw new Error('Teams 웹훅 URL은 https://로 시작해야 함'); cfg.rules = r; return { config:cfg, triggers:{ text:trigText(r), active:true } }; },
+    api_runSync: () => { const n = new Date(), p = v => String(v).padStart(2,'0'); const r = { id:`RUN-0925-${p(n.getHours())}${p(n.getMinutes())}${p(n.getSeconds())}`, trig:'수동', start:`09-25 ${p(n.getHours())}:${p(n.getMinutes())}:${p(n.getSeconds())}`, end:`${p(n.getHours())}:${p(n.getMinutes())}:${p(Math.min(59,n.getSeconds()+5))}`, day:'09-25', days:0, c:0, u:2, a:0, f:0, w:1, status:'성공', message:'' }; runs.unshift(r); return r; },
+    api_getRuns: () => runs,
+    api_getRunDetail: id => { const r = runs.find(x=>x.id===id) || {}; const out = [];
+      for(let i=0;i<r.c;i++) out.push({ key:ROWS[i][0], res:'추가', msg:ROWS[i][1] });
+      for(let i=0;i<Math.min(r.u,6);i++) out.push({ key:ROWS[(i+2)%8][0], res:'갱신', msg:'진행상태, 최종수정일 변경' });
+      for(let i=0;i<r.a;i++) out.push({ key:ROWS[5][0], res:'보관', msg:'행 조건 제외 → _archive 이동' });
+      for(let i=0;i<r.w;i++) out.push({ key:ROWS[0][0], res:'경고', msg:'사업금액: "480000000"을 날짜로 해석할 수 없어 빈 값 처리' });
+      if(r.f) out.push({ key:'(빈 값)', res:'실패', msg:'원본 11행: 고유 키(사업ID)가 비어 있어 건너뜀' }, { key:ROWS[1][0], res:'실패', msg:'원본 12행: 고유 키가 3행과 중복되어 건너뜀' });
+      return out; },
+    api_getDbView: () => { const on = cfg.schema.filter(s=>s.on); const ord = on.filter(s=>s.type==='제목').concat(on.filter(s=>s.type!=='제목'));
+      const idx = ord.map(s => COLS.findIndex(c=>c[0]===s.col));
+      const rows = kept().map((r,ri) => idx.map((j,k) => ord[k].type==='숫자' ? r[j] : (ord[k].type==='날짜' && typeof r[j]==='number') ? '' : String(r[j])).concat([r[0], ri+2, '2026-09-25 14:00', 'x']));
+      return { exists:true, name:cfg.dbName, url:'', tab:'DB_제안사업', folder:'제안팀 공유 / DB', sourceUrl:'',
+        header: ord.map(s=>s.prop).concat(['_row_key','_src_row','_synced_at','_hash']), types: ord.map(s=>s.type).concat(['시스템','시스템','시스템','시스템']),
+        rows, total: rows.length,
+        structure:[ { name:'DB_제안사업', rows:rows.length, desc:'레코드 본문. 속성 설계대로 서식·드롭다운·틀 고정 적용' }, { name:'_schema', rows:on.length+4, desc:'속성명 · 유형 · 원본 컬럼 · 설명. GPT가 DB 의미를 해석하는 기준표' },
+          { name:'_views', rows:3, desc:'보기 정의(필터 · 정렬 · 그룹). 팀 공통 조회 기준' }, { name:'_people', rows:4, desc:'사람 속성 드롭다운 원본 (이름 · 이메일)' },
+          { name:'_archive', rows:ROWS.length-kept().length, desc:'원본에서 삭제되었거나 행 조건에서 제외된 레코드' }, { name:'_log', rows:runs.length, desc:'실행 이력 요약' }, { name:'_log_detail', rows:62, desc:'행 단위 처리 결과 (최근 5000행 유지)' } ] }; },
+  };
+})();
+
+/* ===================================================================== 시작 */
+if(!IS_GAS){ $('#demoBar').hidden = false; $('#demoTag').hidden = false; }
+let start = 'dash';
+try{ const v = localStorage.getItem('sdb_view'); if(v && TITLES[v]) start = v; }catch(e){}
+const hash = location.hash.slice(1); if(TITLES[hash]) start = hash;
+(async () => { await loadDash(); if(start !== 'dash') go(start); })();
+</script>
+
+</body>
+</html>
