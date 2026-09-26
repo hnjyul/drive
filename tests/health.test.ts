@@ -24,4 +24,17 @@ describe("fetch handler", () => {
     expect(res.status).toBe(200);
     expect(await res.text()).toContain("drive");
   });
+
+  it("GET /db 는 APPS_SCRIPT_URL로 302 리다이렉트한다", async () => {
+    const target = "https://script.google.com/macros/s/TEST/exec";
+    const env = { ...createMockEnv(), APPS_SCRIPT_URL: target };
+    const res = await worker.fetch(new Request("http://localhost/db"), env);
+    expect(res.status).toBe(302);
+    expect(res.headers.get("location")).toBe(target);
+  });
+
+  it("APPS_SCRIPT_URL 미설정 시 /db 는 404 안내를 반환한다", async () => {
+    const res = await worker.fetch(new Request("http://localhost/db"), createMockEnv());
+    expect(res.status).toBe(404);
+  });
 });

@@ -2,6 +2,7 @@ import pkg from "../package.json";
 
 export interface Env {
   SETTINGS: KVNamespace;
+  APPS_SCRIPT_URL?: string;
 }
 
 export interface HealthStatus {
@@ -157,7 +158,8 @@ const SAFE_PATH_PATTERN = /^(https?:\/\/|\/)/;
 export function buildIndexHtml(menuItems: MenuItem[] = []): string {
   const defaultLinks = `<a href="/health">/health</a>
   <a href="/version">/version</a>
-  <a href="/settings">/settings</a>`;
+  <a href="/settings">/settings</a>
+  <a href="/db">/db — 시트 DB 빌더</a>`;
 
   const links =
     menuItems.length === 0
@@ -216,6 +218,16 @@ export default {
 
     if (url.pathname === "/version") {
       return Response.json(buildVersionResponse());
+    }
+
+    if (url.pathname === "/db") {
+      if (!env.APPS_SCRIPT_URL) {
+        return new Response("시트 DB 빌더 주소가 아직 설정되지 않았습니다.", {
+          status: 404,
+          headers: { "content-type": "text/plain; charset=utf-8" },
+        });
+      }
+      return Response.redirect(env.APPS_SCRIPT_URL, 302);
     }
 
     if (url.pathname === "/settings" && request.method === "GET") {

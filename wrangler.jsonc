@@ -9,5 +9,8 @@
   },
   "kv_namespaces": [
     { "binding": "SETTINGS", "id": "7464b616f21642218e8ff00cf1409890" }
-  ]
+  ],
+  "vars": {
+    "APPS_SCRIPT_URL": "https://script.google.com/macros/s/AKfycbwla5mb0trJEJB2dSDtvO2mHRLtQn551CBr0NhjY008w4_UW9pqgQ3UFxUhpQ8qRfE/exec"
+  }
 }
